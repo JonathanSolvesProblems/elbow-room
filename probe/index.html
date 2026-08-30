@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebMCP probe</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fbfaf7; --fg:#1c1a17; --mut:#6b665e; --line:#e2ded6; --ok:#1c6b3f; --no:#a3341f; --card:#fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16150f; --fg:#eceae4; --mut:#9a948a; --line:#302d26; --ok:#6cc48d; --no:#e08a72; --card:#1e1c16; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
+         font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size:1.4rem; margin:0 0 .25rem; letter-spacing:-.01em; }
+  .sub { color:var(--mut); margin:0 0 1.75rem; }
+  section { border:1px solid var(--line); border-radius:10px; background:var(--card);
+            padding:1rem 1.1rem; margin-bottom:1rem; }
+  h2 { font-size:.78rem; text-transform:uppercase; letter-spacing:.09em; color:var(--mut);
+       margin:0 0 .7rem; font-weight:600; }
+  .row { display:flex; gap:.6rem; align-items:baseline; padding:.3rem 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:0; }
+  .k { flex:0 0 12rem; color:var(--mut); }
+  .v { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; word-break:break-word; }
+  .ok { color:var(--ok); } .no { color:var(--no); }
+  #log { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
+         white-space:pre-wrap; max-height:22rem; overflow:auto; margin:0; }
+  #log .t { color:var(--mut); }
+  button { font:inherit; padding:.45rem .85rem; border-radius:7px; border:1px solid var(--line);
+           background:transparent; color:var(--fg); cursor:pointer; margin-right:.4rem; }
+  button:hover { border-color:var(--fg); }
+  #confirm { position:fixed; inset:auto 1rem 1rem auto; max-width:22rem; border:1px solid var(--fg);
+             border-radius:10px; background:var(--card); padding:1rem; box-shadow:0 8px 30px rgb(0 0 0 / .18); }
+  #confirm p { margin:0 0 .8rem; }
+  .stairs { font-family:ui-monospace,monospace; font-size:12.5px; color:var(--mut); }
+</style>
+</head>
+<body>
+<main>
+  <h1>WebMCP probe</h1>
+  <p class="sub">Not the product. This page exists to find out how site tools actually behave in a
+    real agent, before any of Elbow&nbsp;Room gets built on top of assumptions.</p>
+
+  <section>
+    <h2>Environment</h2>
+    <div id="env"></div>
+  </section>
+
+  <section>
+    <h2>Try this</h2>
+    <p style="margin:.2rem 0 .8rem">Ask the agent, in order:</p>
+    <ol style="margin:0 0 .9rem 1.1rem; padding:0">
+      <li>“What site tools are available here?”</li>
+      <li>“Echo the word pineapple.”</li>
+      <li>“Can a 84 by 38 inch couch get up these stairs?”</li>
+      <li>“Book the delivery.” <span class="stairs">(this one asks for a human)</span></li>
+      <li>Press <em>Register extra tool</em> below, then ask what tools exist now.</li>
+    </ol>
+    <button id="reg">Register extra tool</button>
+    <button id="unreg">Remove extra tool</button>
+    <button id="clear">Clear log</button>
+  </section>
+
+  <section>
+    <h2>Call log</h2>
+    <pre id="log">nothing yet</pre>
+  </section>
+</main>
+
+<script>
+const logEl = document.getElementById('log');
+let first = true;
+function log(msg, obj) {
+  if (first) { logEl.textContent = ''; first = false; }
+  const t = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.innerHTML = '<span class="t">' + t + '</span>  ' + msg;
+  if (obj !== undefined) line.textContent += '  ' + JSON.stringify(obj);
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function envRow(k, v, good) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = '<div class="k">' + k + '</div><div class="v ' +
+    (good === true ? 'ok' : good === false ? 'no' : '') + '">' + v + '</div>';
+  document.getElementById('env').appendChild(row);
+}
+
+const mc = document.modelContext;
+envRow('document.modelContext', mc ? 'present' : 'MISSING', !!mc);
+if (mc) {
+  envRow('registerTool', typeof mc.registerTool, typeof mc.registerTool === 'function');
+  envRow('getTools', typeof mc.getTools, typeof mc.getTools === 'function');
+  envRow('executeTool', typeof mc.executeTool, typeof mc.executeTool === 'function');
+  envRow('own keys', Object.getOwnPropertyNames(Object.getPrototypeOf(mc)).join(', ') || '(none)');
+}
+envRow('secure context', String(window.isSecureContext), window.isSecureContext);
+envRow('user agent', navigator.userAgent);
+
+// Real numbers from a 1970s house, pending confirmation of the exact tape readings.
+const STAIR = { clearWidthIn: 41.5, winders: 3, note: 'provisional, awaiting confirmed measurement' };
+
+function text(t) { return { content: [{ type: 'text', text: t }] }; }
+
+async function register() {
+  if (!mc || typeof mc.registerTool !== 'function') { log('cannot register: no modelContext'); return; }
+
+  await mc.registerTool({
+    name: 'echo',
+    description: 'Echo a word back. Used to confirm the agent can reach this page at all.',
+    inputSchema: { type:'object', properties:{ word:{ type:'string', description:'Any word' } }, required:['word'] },
+    annotations: { readOnlyHint: true },
+    execute: async (input, client) => {
+      log('CALL echo', input);
+      log('  client arg: ' + (client ? Object.keys(client).join(', ') || '(no enumerable keys)' : 'undefined'));
+      return text('echo: ' + input.word);
+    }
+  });
+
+  await mc.registerTool({
+    name: 'get_stair_geometry',
+    description: 'Read the measured geometry of the basement staircase: clear width, number of winder treads, and headroom at the turn.',
+    inputSchema: { type:'object', properties:{} },
+    annotations: { readOnlyHint: true },
+    execute: async () => { log('CALL get_stair_geometry'); return text(JSON.stringify(STAIR)); }
+  });
+
+  await mc.registerTool({
+    name: 'check_fit',
+    description: 'Check whether an object of a given length and depth in inches can pass up the staircase.',
+    inputSchema: {
+      type:'object',
+      properties:{
+        length_in:{ type:'number', description:'Longest dimension, inches' },
+        depth_in:{ type:'number', description:'Depth across the side profile, inches' }
+      },
+      required:['length_in','depth_in']
+    },
+    annotations: { readOnlyHint: true },
+    execute: async (input) => {
+      log('CALL check_fit', input);
+      const clears = input.depth_in < STAIR.clearWidthIn;
+      return text(clears
+        ? 'Depth ' + input.depth_in + '" clears the ' + STAIR.clearWidthIn + '" run, but the winder turn is not modelled in this probe.'
+        : 'Depth ' + input.depth_in + '" exceeds the ' + STAIR.clearWidthIn + '" clear width. It does not go.');
+    }
+  });
+
+  await mc.registerTool({
+    name: 'book_delivery',
+    description: 'Book a delivery slot. Consequential, so it asks the person at the keyboard to confirm.',
+    inputSchema: { type:'object', properties:{ day:{ type:'string', description:'Day of the week' } }, required:['day'] },
+    execute: async (input, client) => {
+      log('CALL book_delivery', input);
+      if (client && typeof client.requestUserInteraction === 'function') {
+        log('  client.requestUserInteraction EXISTS, calling it');
+        try { await client.requestUserInteraction(); log('  requestUserInteraction resolved'); }
+        catch (e) { log('  requestUserInteraction threw: ' + e); }
+      } else {
+        log('  client.requestUserInteraction NOT available, using in-page fallback');
+      }
+      const ok = await askHuman('Book delivery for ' + input.day + '?');
+      log('  human said: ' + (ok ? 'yes' : 'no'));
+      return text(ok ? 'Booked for ' + input.day + '.' : 'The person declined. Nothing was booked.');
+    }
+  });
+
+  log('registered 4 tools');
+  await report();
+}
+
+function askHuman(question) {
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.id = 'confirm';
+    box.innerHTML = '<p>' + question + '</p>';
+    const yes = document.createElement('button'); yes.textContent = 'Yes';
+    const no = document.createElement('button'); no.textContent = 'No';
+    box.append(yes, no);
+    document.body.appendChild(box);
+    yes.onclick = () => { box.remove(); resolve(true); };
+    no.onclick  = () => { box.remove(); resolve(false); };
+  });
+}
+
+async function report() {
+  if (!mc || typeof mc.getTools !== 'function') return;
+  try {
+    const tools = await mc.getTools();
+    log('getTools -> ' + tools.length + ': ' + tools.map(t => t.name).join(', '));
+  } catch (e) { log('getTools threw: ' + e); }
+}
+
+let extraController = null;
+document.getElementById('reg').onclick = async () => {
+  if (!mc || extraController) return;
+  extraController = new AbortController();
+  await mc.registerTool({
+    name: 'measure_headroom',
+    description: 'Report the headroom above the winder turn, in inches.',
+    inputSchema: { type:'object', properties:{} },
+    annotations: { readOnlyHint: true },
+    execute: async () => { log('CALL measure_headroom'); return text('not yet measured'); }
+  }, { signal: extraController.signal });
+  log('registered measure_headroom dynamically');
+  await report();
+};
+document.getElementById('unreg').onclick = async () => {
+  if (!extraController) return;
+  extraController.abort(); extraController = null;
+  log('aborted measure_headroom');
+  await report();
+};
+document.getElementById('clear').onclick = () => { logEl.textContent = 'cleared'; first = true; };
+
+if (mc && typeof mc.addEventListener === 'function') {
+  mc.addEventListener('toolchange', () => log('EVENT toolchange fired'));
+}
+
+register();
+</script>
+</body>
+</html>
