@@ -1,0 +1,109 @@
+{
+  "note": "aria_yaml and CDP AX tree combined",
+  "url": "https://elbow-room-sand.vercel.app/",
+  "questions": 8,
+  "answered_via_accessibility_tree": 7,
+  "answered_via_webmcp_tools": 8,
+  "canvas_element": {
+    "tag": "CANVAS",
+    "children": 0,
+    "text": "",
+    "attrs": [
+      "id=cv",
+      "width=1072",
+      "height=900"
+    ]
+  },
+  "accessibility_tree_node_strings": 144,
+  "aria_snapshot_chars": 3209,
+  "document_modelContext_present_in_this_browser": false,
+  "reading_current_state": [
+    {
+      "question": "Which object is on the plan?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    },
+    {
+      "question": "How long is it?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    },
+    {
+      "question": "Where is it, in inches from the corner?",
+      "accessibility_tree": false,
+      "webmcp_tools": true
+    },
+    {
+      "question": "What angle is it at?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    },
+    {
+      "question": "Is it currently colliding with the wall?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    },
+    {
+      "question": "How wide is the turn?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    },
+    {
+      "question": "What is the longest thing that gets round?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    },
+    {
+      "question": "Which measurements are still guesses?",
+      "accessibility_tree": true,
+      "webmcp_tools": true
+    }
+  ],
+  "asking_or_changing": [
+    {
+      "task": "Longest sofa that fits at 30 in deep",
+      "dom_control_exists": false,
+      "note": "No control produces this. The page only ever shows one depth.",
+      "webmcp_tools": true
+    },
+    {
+      "task": "Verdict for an object not in the catalogue",
+      "dom_control_exists": true,
+      "note": "Achievable: the three number inputs are real form controls.",
+      "webmcp_tools": true
+    },
+    {
+      "task": "Put the object at x=50, y=20, angle=30",
+      "dom_control_exists": false,
+      "note": "Only reachable by dragging the canvas to a pixel coordinate.",
+      "webmcp_tools": true
+    },
+    {
+      "task": "Park it exactly at the pinch point",
+      "dom_control_exists": true,
+      "note": "Achievable: there is a button for it.",
+      "webmcp_tools": true
+    },
+    {
+      "task": "Re-check with the door leaf removed",
+      "dom_control_exists": false,
+      "note": "No control exists. Tool only.",
+      "webmcp_tools": true
+    },
+    {
+      "task": "Record a measured headroom of 76 in",
+      "dom_control_exists": false,
+      "note": "No control exists. Tool only, and it asks a human first.",
+      "webmcp_tools": true
+    },
+    {
+      "task": "Why is turn.widthB provisional, specifically",
+      "dom_control_exists": true,
+      "note": "Achievable: the provenance list is rendered text.",
+      "webmcp_tools": true
+    }
+  ],
+  "tasks": 7,
+  "tasks_with_a_dom_control": 3,
+  "tasks_via_webmcp_tools": 7
+}
