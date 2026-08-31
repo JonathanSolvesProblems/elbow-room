@@ -23,8 +23,8 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { display:grid; grid-template-columns:1fr 22rem; min-height:100vh; }
-  @media (max-width:820px) { .wrap { grid-template-columns:1fr; } }
+  .wrap { display:grid; grid-template-columns:1fr 23rem; min-height:100vh; }
+  @media (max-width:860px) { .wrap { grid-template-columns:1fr; } }
 
   .stage { position:relative; }
   canvas { width:100%; height:100%; min-height:60vh; display:block; touch-action:none; }
@@ -32,9 +32,9 @@
           background:var(--card); border:1px solid var(--line); border-radius:7px; padding:.4rem .6rem; }
 
   aside { border-left:1px solid var(--line); padding:1.5rem 1.25rem 3rem; background:var(--card); }
-  @media (max-width:820px) { aside { border-left:0; border-top:1px solid var(--line); } }
+  @media (max-width:860px) { aside { border-left:0; border-top:1px solid var(--line); } }
   h1 { font-size:1.05rem; margin:0 0 .15rem; letter-spacing:-.01em; }
-  .tag { color:var(--mut); font-size:12.5px; margin:0 0 1.4rem; }
+  .tag { color:var(--mut); font-size:12.5px; margin:0 0 1.3rem; }
   h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.09em; color:var(--mut);
        margin:1.5rem 0 .6rem; font-weight:600; }
 
@@ -53,8 +53,21 @@
   ul.prov li { margin-bottom:.3rem; }
   .warn { color:var(--pinch); }
   button { font:inherit; padding:.45rem .8rem; border-radius:7px; border:1px solid var(--line);
-           background:transparent; color:var(--fg); cursor:pointer; }
+           background:transparent; color:var(--fg); cursor:pointer; margin-right:.35rem; }
   button:hover { border-color:var(--fg); }
+
+  .banner { border:1px solid var(--pinch); background:var(--badfill); border-radius:9px;
+            padding:.8rem .9rem; margin-bottom:1rem; font-size:13px; }
+  .banner code { font-size:12px; }
+  body[data-webmcp="present"] .banner { display:none; }
+
+  .tools { font-size:12px; color:var(--mut); }
+  .tools code { font-size:11.5px; }
+
+  .ask { position:fixed; inset:auto 1.25rem 1.25rem auto; max-width:23rem; z-index:20;
+         border:1px solid var(--fg); border-radius:10px; background:var(--card);
+         padding:1rem; box-shadow:0 10px 34px rgb(0 0 0 / .2); }
+  .ask p { margin:0 0 .8rem; }
 </style>
 </head>
 <body>
@@ -66,19 +79,35 @@
 
   <aside>
     <h1>Elbow Room</h1>
-    <p class="tag">Basement stairs, 1970s house. Plan view of the winder turn.</p>
+    <p class="tag">Before you buy the couch, find out whether it can get up the stairs.
+      Basement winder turn, a 1970s house.</p>
+
+    <div class="banner" id="banner">
+      <strong>No site tools in this browser.</strong>
+      The app works, but the agent half needs WebMCP. Use ChatGPT's desktop browser,
+      or Google Chrome with <code>chrome://flags/#enable-webmcp-testing</code> enabled.
+    </div>
 
     <h2>What are you carrying</h2>
     <select id="pick"></select>
     <div class="dims" style="margin-top:.6rem">
-      <div><label>length</label><input id="len" type="number" step="0.5"></div>
-      <div><label>depth</label><input id="dep" type="number" step="0.5"></div>
-      <div><label>height</label><input id="hgt" type="number" step="0.5"></div>
+      <div><label>length in</label><input id="len" type="number" step="0.5"></div>
+      <div><label>depth in</label><input id="dep" type="number" step="0.5"></div>
+      <div><label>height in</label><input id="hgt" type="number" step="0.5"></div>
     </div>
     <p id="dimsFt" style="margin:.4rem 0 0;font-size:12px;color:var(--mut)"></p>
 
     <div id="verdict" class="verdict no"></div>
     <p style="margin-top:.8rem"><button id="pinch">Show me where it jams</button></p>
+
+    <h2>Ask your agent</h2>
+    <p class="tools">
+      &ldquo;Can my couch get up these stairs?&rdquo;<br>
+      &ldquo;Show me where it jams.&rdquo;<br>
+      &ldquo;How long could a sofa be at 36 inches deep?&rdquo;<br>
+      &ldquo;Take the door off and try again.&rdquo;<br>
+      &ldquo;What have you not actually measured?&rdquo;
+    </p>
 
     <h2>Where these numbers came from</h2>
     <ul class="prov" id="prov"></ul>
@@ -86,69 +115,8 @@
 </div>
 
 <script type="module">
-import { STAIRCASE, CATALOGUE, plain, plainObject, provisionalFields, SOURCE } from './app/model.js';
-import { checkPath } from './app/geometry.js';
-import { ft } from './app/units.js';
-import * as view from './app/view.js';
-
-const stair = plain(STAIRCASE);
-view.state.a = stair.turn.widthA;
-view.state.b = stair.turn.widthB;
-view.attach(document.getElementById('cv'));
-
-const pick = document.getElementById('pick');
-for (const item of CATALOGUE) {
-  const o = document.createElement('option');
-  o.value = item.id; o.textContent = item.label;
-  pick.appendChild(o);
-}
-
-const len = document.getElementById('len'),
-      dep = document.getElementById('dep'),
-      hgt = document.getElementById('hgt');
-
-let current = CATALOGUE[0];
-
-function load(item) {
-  current = item;
-  len.value = item.length.value;
-  dep.value = item.depth.value;
-  hgt.value = item.height.value;
-  sync();
-}
-
-function sync() {
-  view.update({
-    object: { length: +len.value, depth: +dep.value, label: current.label }
-  });
-  render();
-}
-
-function render() {
-  document.getElementById('dimsFt').textContent =
-    'Inches. That is ' + ft(+len.value) + ' by ' + ft(+dep.value) + ' by ' + ft(+hgt.value) + '.';
-  const obj = { length: +len.value, width: +dep.value, height: +hgt.value, feetHeight: current.feetHeight };
-  const r = checkPath(obj, stair);
-  const el = document.getElementById('verdict');
-  el.className = 'verdict ' + (r.verdict === 'goes' ? 'yes' : 'no');
-  el.innerHTML = '<b>' + (r.verdict === 'goes' ? 'It goes' : 'It does not go') + '</b>' +
-    r.reasons.map(x => `<p>${x.pass ? '' : '<strong>'}${x.stage}. ${x.detail}${x.pass ? '' : '</strong>'}</p>`).join('') +
-    r.advice.map(a => `<p>&rarr; ${a}</p>`).join('');
-}
-
-pick.onchange = () => load(CATALOGUE.find(c => c.id === pick.value));
-for (const el of [len, dep, hgt]) el.oninput = sync;
-document.getElementById('pinch').onclick = () => { view.showPinch(); render(); };
-
-// Provenance, shown rather than buried. Provisional numbers are flagged in red
-// because a verdict computed from a placeholder is not a verdict.
-const prov = document.getElementById('prov');
-prov.innerHTML =
-  `<li><strong>${ft(STAIRCASE.clearWidth.value)}</strong> clear width. ${STAIRCASE.clearWidth.note}</li>` +
-  provisionalFields(STAIRCASE).map(f =>
-    `<li class="warn"><strong>${f.field}</strong> is provisional. ${f.note}</li>`).join('');
-
-load(CATALOGUE[0]);
+import { boot } from './app/main.js';
+boot();
 </script>
 </body>
 </html>
