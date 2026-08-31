@@ -1,0 +1,7 @@
+# Never ship working material to the public deployment.
+# reference/ holds interior photographs of a private home.
+reference/
+scratch/
+tmp/
+.git/
+*.log
