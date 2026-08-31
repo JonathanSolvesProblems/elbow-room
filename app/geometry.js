@@ -128,39 +128,72 @@ export function checkPath(object, stair) {
       detail: `${thin.toFixed(1)} in across clears the ${stair.clearWidth} in run.` });
   }
 
-  // --- the turn, flat ---
-  const flat = cornerMaxLength({
-    widthA: stair.turn.widthA, widthB: stair.turn.widthB, objectWidth: mid
-  });
+  // --- the turn ---
+  //
+  // Two things are free to choose and both matter, so try both rather than
+  // assuming. First, which of the two cross dimensions goes flat in plan and
+  // which stands vertical: you turn a mattress on its side so the 12 in edge
+  // goes round the corner and the 60 in face goes up. Second, how far to tilt
+  // the long axis, which trades plan length for headroom.
+  //
+  // Tilted by p, the object presents  len*cos(p) + vert*sin(p)  in plan, not
+  // len*cos(p). Standing something on end does not make it disappear from the
+  // floor; it leaves its own thickness behind.
+  const orientations = [
+    { planWidth: thin, vert: mid,  name: 'on its side' },
+    { planWidth: mid,  vert: thin, name: 'flat' }
+  ];
 
-  // --- the turn, tilted as far as the soffit allows ---
-  const tilt = maxTilt({
-    headroom: stair.turn.headroom, objectLength: len, objectThickness: thin
-  });
-  const planLength = len * Math.cos(tilt * DEG);
+  let best = null;
+  for (const o of orientations) {
+    if (o.vert > stair.turn.headroom) continue;      // will not stand up at all
+    const corner = cornerMaxLength({
+      widthA: stair.turn.widthA, widthB: stair.turn.widthB, objectWidth: o.planWidth
+    });
+    const ceiling = maxTilt({
+      headroom: stair.turn.headroom, objectLength: len, objectThickness: o.vert
+    });
 
-  const passesTurn = planLength <= flat.maxLength;
-  reasons.push({
-    stage: 'winder turn',
-    pass: passesTurn,
-    detail: passesTurn
-      ? `Tilted ${tilt.toFixed(0)} degrees it presents ${planLength.toFixed(1)} in in plan, ` +
-        `under the ${flat.maxLength.toFixed(1)} in the turn allows at its pinch point ` +
-        `(${flat.pinchAngle.toFixed(0)} degrees through the corner).`
-      : `The turn allows ${flat.maxLength.toFixed(1)} in at its pinch point. ` +
-        `Tilted as far as the ${stair.turn.headroom} in of headroom permits (${tilt.toFixed(0)} degrees) ` +
-        `it still presents ${planLength.toFixed(1)} in. Short by ${(planLength - flat.maxLength).toFixed(1)} in.`
-  });
+    // plan(p) = len*cos(p) + vert*sin(p) rises to a maximum at atan(vert/len)
+    // and falls after it, so over [0, ceiling] the minimum is always at one end
+    // or the other. Tilting a little is worse than not tilting at all, which is
+    // exactly the trap that made a queen mattress score worse than a king.
+    const plan = p => len * Math.cos(p * DEG) + o.vert * Math.sin(p * DEG);
+    const tilt = plan(ceiling) < plan(0) ? ceiling : 0;
+    const planLength = plan(tilt);
+
+    const slack = corner.maxLength - planLength;
+    if (!best || slack > best.slack) best = { ...o, corner, tilt, planLength, slack };
+  }
+
+  if (!best) {
+    reasons.push({ stage: 'winder turn', pass: false,
+      detail: `Neither cross section fits under the ${stair.turn.headroom} in of headroom over the turn.` });
+  } else {
+    reasons.push({
+      stage: 'winder turn',
+      pass: best.slack >= 0,
+      detail: best.slack >= 0
+        ? `Carried ${best.name} and tilted ${best.tilt.toFixed(0)} degrees it presents ` +
+          `${best.planLength.toFixed(1)} in in plan, inside the ${best.corner.maxLength.toFixed(1)} in ` +
+          `the turn allows at its pinch point (${best.corner.pinchAngle.toFixed(0)} degrees through the corner). ` +
+          `${best.slack.toFixed(1)} in to spare.`
+        : `Best case is ${best.name}, tilted ${best.tilt.toFixed(0)} degrees, which still presents ` +
+          `${best.planLength.toFixed(1)} in in plan. The turn allows ${best.corner.maxLength.toFixed(1)} in ` +
+          `at its pinch point. Short by ${(-best.slack).toFixed(1)} in.`
+    });
+  }
 
   const failures = reasons.filter(r => !r.pass);
-  const margin = flat.maxLength - planLength;
 
   return {
     verdict: failures.length === 0 ? 'goes' : 'does not go',
     reasons,
-    margin,
-    tiltUsed: tilt,
-    advice: failures.length ? suggest(object, stair, flat, tilt, thin, mid, len) : []
+    margin: best ? best.slack : -Infinity,
+    tiltUsed: best ? best.tilt : 0,
+    orientation: best ? best.name : null,
+    advice: failures.length && best
+      ? suggest(object, stair, best.corner, best.tilt, best.planWidth, best.vert, len) : []
   };
 }
 
