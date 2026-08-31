@@ -66,6 +66,7 @@ export const app = {
       height: item.height.value
     };
     this.sync();
+    view.park();
     return item;
   },
 
