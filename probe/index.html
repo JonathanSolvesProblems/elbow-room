@@ -147,7 +147,7 @@ function text(t) { return { content: [{ type: 'text', text: t }] }; }
 async function register() {
   if (!mc || typeof mc.registerTool !== 'function') { log('cannot register: no modelContext'); return; }
 
-  await mc.registerTool({
+  const echoHandle = await mc.registerTool({
     name: 'echo',
     description: 'Echo a word back. Used to confirm the agent can reach this page at all.',
     inputSchema: { type:'object', properties:{ word:{ type:'string', description:'Any word' } }, required:['word'] },
@@ -208,6 +208,8 @@ async function register() {
   });
 
   log('registered 4 tools');
+  log('registerTool returned: ' + (echoHandle === undefined ? 'undefined' :
+      typeof echoHandle + ' { ' + (Object.keys(echoHandle).join(', ') || 'no enumerable keys') + ' }'));
   await report();
 }
 
@@ -271,7 +273,16 @@ async function selfCall(name, input) {
   }
   log('SELF-CALL ' + name, input);
   try {
-    const out = await mc.executeTool(name, input);
+    // executeTool wants a RegisteredTool, not a name. Find the live handle.
+    const tools = await mc.getTools();
+    const tool = tools.find(t => t.name === name);
+    if (!tool) { log('  no registered tool called ' + name); return; }
+
+    log('  RegisteredTool own keys: ' + (Object.keys(tool).join(', ') || '(none enumerable)'));
+    log('  RegisteredTool prototype: ' +
+        Object.getOwnPropertyNames(Object.getPrototypeOf(tool)).join(', '));
+
+    const out = await mc.executeTool(tool, input);
     log('  returned: ' + JSON.stringify(out));
   } catch (e) {
     log('  threw: ' + (e && e.message ? e.message : String(e)));
