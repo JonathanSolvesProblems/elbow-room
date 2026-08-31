@@ -67,7 +67,8 @@ export const STAIRCASE = {
       object: 'couch',
       outcome: 'did not go',
       evidence: 'Owner could not get it up the stairs without damaging the walls.',
-      note: 'Dimensions not recorded. The couch is no longer in the house.'
+      note: 'Measured 2026-08-31 at 91 in arm to arm. The turn allows 45.4 in at that depth, ' +
+            'so it was over twice the longest thing that could have gone round.'
     },
     {
       object: 'water heater (Giant 172E-3F8M-HQEF, 279 L)',
@@ -86,9 +87,22 @@ export const STAIRCASE = {
  */
 export const CATALOGUE = [
   {
+    id: 'the-couch',
+    label: 'The couch',
+    length: n(91, SOURCE.MEASURED,
+      'Arm to arm. Photo 20260831_182518, tape reading just past 90 at the outer arm edge.'),
+    depth:  n(36, SOURCE.MEASURED,
+      'Photo 20260831_182537, tape body held at the 3F mark. Which of the two cross readings is depth ' +
+      'and which is height is not settled, but every combination fails by 33 in or more.'),
+    height: n(48, SOURCE.MEASURED,
+      'Photo 20260831_182548. See the note on depth.'),
+    feetHeight: 4,
+    note: 'The couch this project exists because of.'
+  },
+  {
     id: 'sofa-3seat',
-    label: '3-seat sofa',
-    length: n(84, SOURCE.PROVISIONAL, 'Typical 3-seat sofa. Not the one from this house.'),
+    label: 'Typical 3-seat sofa',
+    length: n(84, SOURCE.PROVISIONAL, 'Industry-typical, for comparison against the measured one.'),
     depth:  n(38, SOURCE.PROVISIONAL, 'Typical.'),
     height: n(34, SOURCE.PROVISIONAL, 'Typical.'),
     feetHeight: 4
