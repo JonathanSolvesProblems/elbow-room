@@ -24,7 +24,7 @@ function n(value, source, note) {
 }
 
 /**
- * a 1970s house. Basement staircase.
+ * A 1970s house. Basement staircase.
  * A straight run rising from the basement floor into three winder treads that
  * turn the flight through 90 degrees, then out through a doorway at the top.
  * A soffit crosses diagonally above the turn.
@@ -71,12 +71,15 @@ export const STAIRCASE = {
             'so it was over twice the longest thing that could have gone round.'
     },
     {
-      object: 'water heater (Giant 172E-3F8M-HQEF, 279 L)',
+      object: 'water heater (Giant 172E-3F8M, 279 L)',
       outcome: 'went, with damage',
-      evidence: 'Carried down by installers during the July 2026 warranty replacement. ' +
-                'No wall protection was used. The scuffs visible in photos 172641 and 172706 are from this, ' +
-                'not from the couch.',
-      note: 'Manufacturer dimensions not yet obtained.'
+      evidence: 'Carried down by installers during the July 2026 warranty replacement, per the ' +
+                'owner no wall protection was used. Photographs 20260831_192429 and _192435 show ' +
+                'gouging along the soffit edge and the corner bead.',
+      note: '24 in diameter by 59⅞ in tall, from Giant\'s own engineering submittal sheet. ' +
+            'The solver says it clears in plan with room to spare, and it is right: it did go. ' +
+            'The damage is on the soffit, which is the measurement still standing on a placeholder. ' +
+            'The gouges mark where the tape needs to go.'
     }
   ]
 };
@@ -106,6 +109,16 @@ export const CATALOGUE = [
     depth:  n(38, SOURCE.PROVISIONAL, 'Typical.'),
     height: n(34, SOURCE.PROVISIONAL, 'Typical.'),
     feetHeight: 4
+  },
+  {
+    id: 'water-tank',
+    label: 'Water heater, 279 L',
+    length: n(59.875, SOURCE.STANDARD,
+      'Giant 172E-3F8M Super Cascade, height from the manufacturer engineering submittal sheet.'),
+    depth:  n(24, SOURCE.STANDARD, 'Giant 172E-3F8M, diameter from the manufacturer sheet.'),
+    height: n(24, SOURCE.STANDARD, 'Cylinder, so the second cross dimension equals the diameter.'),
+    note: 'Carried down these stairs in July 2026 during a warranty replacement. It went, and it ' +
+          'marked the soffit on the way.'
   },
   {
     id: 'mattress-queen',

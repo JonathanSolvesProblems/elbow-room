@@ -186,10 +186,29 @@ export function checkPath(object, stair) {
     });
   }
 
+  // "Goes" and "goes without touching anything" are different answers, and the
+  // difference is what costs people their walls. A 279 litre water heater came
+  // down this staircase with plenty of room in plan and still gouged the
+  // soffit, because nobody carries furniture along the ideal path. Under a foot
+  // of margin, say so.
+  const TIGHT = 12;
+  if (best && best.slack >= 0 && best.slack < TIGHT) {
+    reasons.push({
+      stage: 'clearance',
+      pass: true,
+      tight: true,
+      detail: `It fits, but only by ${ft(best.slack)}. At that margin it will touch the walls ` +
+              `unless they are protected and the carry is slow.`
+    });
+  }
+
   const failures = reasons.filter(r => !r.pass);
 
   return {
-    verdict: failures.length === 0 ? 'goes' : 'does not go',
+    verdict: failures.length === 0
+      ? (best && best.slack < TIGHT ? 'goes, tight' : 'goes')
+      : 'does not go',
+    tight: !!(best && best.slack >= 0 && best.slack < TIGHT),
     reasons,
     margin: best ? best.slack : -Infinity,
     tiltUsed: best ? best.tilt : 0,
