@@ -152,11 +152,28 @@ async function register() {
     description: 'Echo a word back. Used to confirm the agent can reach this page at all.',
     inputSchema: { type:'object', properties:{ word:{ type:'string', description:'Any word' } }, required:['word'] },
     annotations: { readOnlyHint: true },
-    execute: async (input, client) => {
+    execute: async (input, second) => {
       log('CALL echo', input);
-      log('  client arg: ' + (client ? Object.keys(client).join(', ') || '(no enumerable keys)' : 'undefined'));
+      // Chrome's imperative-API docs describe the second argument as { signal }.
+      // The security guide separately mentions requestUserInteraction. Find out
+      // which is actually true here rather than picking one and hoping.
+      log('  2nd arg keys: ' + (second ? (Object.keys(second).join(', ') || '(none enumerable)') : 'undefined'));
+      if (second) {
+        log('  has signal: ' + (second.signal instanceof AbortSignal));
+        log('  has requestUserInteraction: ' + (typeof second.requestUserInteraction));
+      }
       return text('echo: ' + input.word);
     }
+  });
+
+  // The docs say "return string result", the spec README shows a content array.
+  // Register one of each and see which the runtime is happy with.
+  await mc.registerTool({
+    name: 'plain_string',
+    description: 'Returns a bare string rather than a content array, to find out which return shape the runtime accepts.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+    execute: async () => { log('CALL plain_string'); return 'a bare string'; }
   });
 
   await mc.registerTool({
@@ -192,14 +209,14 @@ async function register() {
     name: 'book_delivery',
     description: 'Book a delivery slot. Consequential, so it asks the person at the keyboard to confirm.',
     inputSchema: { type:'object', properties:{ day:{ type:'string', description:'Day of the week' } }, required:['day'] },
-    execute: async (input, client) => {
+    execute: async (input, second) => {
       log('CALL book_delivery', input);
-      if (client && typeof client.requestUserInteraction === 'function') {
-        log('  client.requestUserInteraction EXISTS, calling it');
-        try { await client.requestUserInteraction(); log('  requestUserInteraction resolved'); }
+      if (second && typeof second.requestUserInteraction === 'function') {
+        log('  requestUserInteraction EXISTS, calling it');
+        try { await second.requestUserInteraction(); log('  requestUserInteraction resolved'); }
         catch (e) { log('  requestUserInteraction threw: ' + e); }
       } else {
-        log('  client.requestUserInteraction NOT available, using in-page fallback');
+        log('  requestUserInteraction NOT available, using in-page fallback');
       }
       const ok = await askHuman('Book delivery for ' + input.day + '?');
       log('  human said: ' + (ok ? 'yes' : 'no'));
@@ -282,7 +299,8 @@ async function selfCall(name, input) {
     log('  RegisteredTool prototype: ' +
         Object.getOwnPropertyNames(Object.getPrototypeOf(tool)).join(', '));
 
-    const out = await mc.executeTool(tool, input);
+    // executeTool takes the input as a JSON *string*, not an object.
+    const out = await mc.executeTool(tool, JSON.stringify(input));
     log('  returned: ' + JSON.stringify(out));
   } catch (e) {
     log('  threw: ' + (e && e.message ? e.message : String(e)));
