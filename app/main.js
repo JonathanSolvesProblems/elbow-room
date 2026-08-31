@@ -11,6 +11,7 @@ import { STAIRCASE, CATALOGUE, plain, plainObject, provisionalFields, SOURCE } f
 import { checkPath, cornerMaxLength } from './geometry.js';
 import { ft } from './units.js';
 import * as view from './view.js';
+import * as section from './section.js';
 import { registerTools } from './tools.js';
 
 export const app = {
@@ -125,6 +126,7 @@ export function boot() {
   view.state.a = STAIRCASE.turn.widthA.value;
   view.state.b = STAIRCASE.turn.widthB.value;
   view.attach(document.getElementById('cv'));
+  section.attach(document.getElementById('sec'));
 
   const pick = document.getElementById('pick');
   for (const item of CATALOGUE) {
@@ -151,6 +153,15 @@ export function boot() {
     el.innerHTML = '<b>' + (r.verdict === 'goes' ? 'It goes' : 'It does not go') + '</b>' +
       r.reasons.map(x => `<p>${x.pass ? '' : '<strong>'}${x.stage}. ${x.detail}${x.pass ? '' : '</strong>'}</p>`).join('') +
       r.advice.map(a => `<p>&rarr; ${a}</p>`).join('');
+
+    // The section view carries the half of the model the plan cannot show:
+    // how far you can tilt before the soffit stops you.
+    section.set({
+      headroom: app.stairModel.turn.headroom.value,
+      length: app.dims.length,
+      thickness: Math.min(app.dims.depth, app.dims.height),
+      provisional: app.stairModel.turn.headroom.source === SOURCE.PROVISIONAL
+    });
 
     const prov = document.getElementById('prov');
     prov.innerHTML =

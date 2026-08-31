@@ -95,10 +95,9 @@ export const CATALOGUE = [
     length: n(91, SOURCE.MEASURED,
       'Arm to arm. Photo 20260831_182518, tape reading just past 90 at the outer arm edge.'),
     depth:  n(36, SOURCE.MEASURED,
-      'Photo 20260831_182537, tape body held at the 3F mark. Which of the two cross readings is depth ' +
-      'and which is height is not settled, but every combination fails by 33 in or more.'),
+      'Front to back across the seat. Photo 20260831_194031 confirms this is the depth, not the height.'),
     height: n(48, SOURCE.MEASURED,
-      'Photo 20260831_182548. See the note on depth.'),
+      'Floor to the top of the back. Photo 20260831_182548.'),
     feetHeight: 4,
     note: 'The couch this project exists because of.'
   },
