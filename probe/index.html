@@ -61,6 +61,9 @@
     <button id="reg">Register extra tool</button>
     <button id="unreg">Remove extra tool</button>
     <button id="clear">Clear log</button>
+    <p style="margin:.9rem 0 .4rem">No agent handy? The page can call its own tools:</p>
+    <button id="selfEcho">Call echo</button>
+    <button id="selfBook">Call book_delivery</button>
   </section>
 
   <section>
@@ -253,6 +256,30 @@ document.getElementById('unreg').onclick = async () => {
   await report();
 };
 document.getElementById('clear').onclick = () => { logEl.textContent = 'cleared'; first = true; };
+
+/**
+ * Invoke a tool from the page itself. This is the only part of the probe that
+ * needs no agent, and it answers the two questions the plumbing cannot: what
+ * the `client` argument actually carries, and whether requestUserInteraction
+ * is real or still just an open spec issue.
+ */
+async function selfCall(name, input) {
+  if (!mc) { log('cannot call: no document.modelContext in ' + browser.name); return; }
+  if (typeof mc.executeTool !== 'function') {
+    log('document.modelContext.executeTool is ' + typeof mc.executeTool + ', cannot self-call');
+    return;
+  }
+  log('SELF-CALL ' + name, input);
+  try {
+    const out = await mc.executeTool(name, input);
+    log('  returned: ' + JSON.stringify(out));
+  } catch (e) {
+    log('  threw: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+document.getElementById('selfEcho').onclick = () => selfCall('echo', { word: 'pineapple' });
+document.getElementById('selfBook').onclick = () => selfCall('book_delivery', { day: 'Thursday' });
 
 if (mc && typeof mc.addEventListener === 'function') {
   mc.addEventListener('toolchange', () => log('EVENT toolchange fired'));
