@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elbow Room</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#faf8f4; --fg:#1c1a17; --mut:#6b665e; --line:#e0dbd2; --card:#fff;
+    --floor:#efeae1; --wall:#3a352c; --pinch:#a3341f; --ok:#1c6b3f;
+    --okfill:rgba(28,107,63,.18); --badfill:rgba(163,52,31,.22);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#15140f; --fg:#ecebe5; --mut:#98928a; --line:#2e2b24; --card:#1d1b16;
+      --floor:#26241d; --wall:#8a8377; --pinch:#e08a72; --ok:#6cc48d;
+      --okfill:rgba(108,196,141,.16); --badfill:rgba(224,138,114,.20);
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { display:grid; grid-template-columns:1fr 22rem; min-height:100vh; }
+  @media (max-width:820px) { .wrap { grid-template-columns:1fr; } }
+
+  .stage { position:relative; }
+  canvas { width:100%; height:100%; min-height:60vh; display:block; touch-action:none; }
+  .hint { position:absolute; left:1rem; bottom:1rem; color:var(--mut); font-size:12.5px;
+          background:var(--card); border:1px solid var(--line); border-radius:7px; padding:.4rem .6rem; }
+
+  aside { border-left:1px solid var(--line); padding:1.5rem 1.25rem 3rem; background:var(--card); }
+  @media (max-width:820px) { aside { border-left:0; border-top:1px solid var(--line); } }
+  h1 { font-size:1.05rem; margin:0 0 .15rem; letter-spacing:-.01em; }
+  .tag { color:var(--mut); font-size:12.5px; margin:0 0 1.4rem; }
+  h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.09em; color:var(--mut);
+       margin:1.5rem 0 .6rem; font-weight:600; }
+
+  select, input { font:inherit; width:100%; padding:.4rem .5rem; border-radius:6px;
+                  border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  .dims { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.4rem; }
+  .dims label { font-size:11px; color:var(--mut); display:block; margin-bottom:.15rem; }
+
+  .verdict { border-radius:9px; padding:.85rem .9rem; margin-top:1rem; border:1px solid; }
+  .verdict.no { border-color:var(--pinch); background:var(--badfill); }
+  .verdict.yes { border-color:var(--ok); background:var(--okfill); }
+  .verdict b { display:block; font-size:1.05rem; margin-bottom:.3rem; }
+  .verdict p { margin:.35rem 0 0; font-size:13px; }
+
+  ul.prov { margin:.4rem 0 0; padding-left:1.1rem; font-size:12px; color:var(--mut); }
+  ul.prov li { margin-bottom:.3rem; }
+  .warn { color:var(--pinch); }
+  button { font:inherit; padding:.45rem .8rem; border-radius:7px; border:1px solid var(--line);
+           background:transparent; color:var(--fg); cursor:pointer; }
+  button:hover { border-color:var(--fg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="cv"></canvas>
+    <div class="hint">Drag to move. Scroll to rotate.</div>
+  </div>
+
+  <aside>
+    <h1>Elbow Room</h1>
+    <p class="tag">Basement stairs, 1970s house. Plan view of the winder turn.</p>
+
+    <h2>What are you carrying</h2>
+    <select id="pick"></select>
+    <div class="dims" style="margin-top:.6rem">
+      <div><label>length in</label><input id="len" type="number" step="0.5"></div>
+      <div><label>depth in</label><input id="dep" type="number" step="0.5"></div>
+      <div><label>height in</label><input id="hgt" type="number" step="0.5"></div>
+    </div>
+
+    <div id="verdict" class="verdict no"></div>
+    <p style="margin-top:.8rem"><button id="pinch">Show me where it jams</button></p>
+
+    <h2>Where these numbers came from</h2>
+    <ul class="prov" id="prov"></ul>
+  </aside>
+</div>
+
+<script type="module">
+import { STAIRCASE, CATALOGUE, plain, plainObject, provisionalFields, SOURCE } from './app/model.js';
+import { checkPath } from './app/geometry.js';
+import * as view from './app/view.js';
+
+const stair = plain(STAIRCASE);
+view.state.a = stair.turn.widthA;
+view.state.b = stair.turn.widthB;
+view.attach(document.getElementById('cv'));
+
+const pick = document.getElementById('pick');
+for (const item of CATALOGUE) {
+  const o = document.createElement('option');
+  o.value = item.id; o.textContent = item.label;
+  pick.appendChild(o);
+}
+
+const len = document.getElementById('len'),
+      dep = document.getElementById('dep'),
+      hgt = document.getElementById('hgt');
+
+let current = CATALOGUE[0];
+
+function load(item) {
+  current = item;
+  len.value = item.length.value;
+  dep.value = item.depth.value;
+  hgt.value = item.height.value;
+  sync();
+}
+
+function sync() {
+  view.update({
+    object: { length: +len.value, depth: +dep.value, label: current.label }
+  });
+  render();
+}
+
+function render() {
+  const obj = { length: +len.value, width: +dep.value, height: +hgt.value, feetHeight: current.feetHeight };
+  const r = checkPath(obj, stair);
+  const el = document.getElementById('verdict');
+  el.className = 'verdict ' + (r.verdict === 'goes' ? 'yes' : 'no');
+  el.innerHTML = '<b>' + (r.verdict === 'goes' ? 'It goes' : 'It does not go') + '</b>' +
+    r.reasons.map(x => `<p>${x.pass ? '' : '<strong>'}${x.stage}. ${x.detail}${x.pass ? '' : '</strong>'}</p>`).join('') +
+    r.advice.map(a => `<p>&rarr; ${a}</p>`).join('');
+}
+
+pick.onchange = () => load(CATALOGUE.find(c => c.id === pick.value));
+for (const el of [len, dep, hgt]) el.oninput = sync;
+document.getElementById('pinch').onclick = () => { view.showPinch(); render(); };
+
+// Provenance, shown rather than buried. Provisional numbers are flagged in red
+// because a verdict computed from a placeholder is not a verdict.
+const prov = document.getElementById('prov');
+prov.innerHTML =
+  `<li><strong>${STAIRCASE.clearWidth.value}"</strong> clear width. ${STAIRCASE.clearWidth.note}</li>` +
+  provisionalFields(STAIRCASE).map(f =>
+    `<li class="warn"><strong>${f.field}</strong> is provisional. ${f.note}</li>`).join('');
+
+load(CATALOGUE[0]);
+</script>
+</body>
+</html>
