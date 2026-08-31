@@ -89,7 +89,42 @@ function envRow(k, v, good) {
   document.getElementById('env').appendChild(row);
 }
 
+/** Name the browser, because "MISSING" on its own sends people hunting for a bug. */
+function browserGuess() {
+  const ua = navigator.userAgent;
+  if (/Edg\//.test(ua))       return { name: 'Microsoft Edge', webmcp: false,
+    why: 'Edge does not ship WebMCP. Nothing you do on this page will register a tool.' };
+  if (/OPR\//.test(ua))       return { name: 'Opera', webmcp: false,
+    why: 'Opera does not ship WebMCP.' };
+  if (/Firefox\//.test(ua))   return { name: 'Firefox', webmcp: false,
+    why: 'Firefox does not ship WebMCP.' };
+  if (/ChatGPT/i.test(ua))    return { name: "ChatGPT's in-app browser", webmcp: true, why: '' };
+  if (/Chrome\//.test(ua) && /Google Inc/.test(navigator.vendor || ''))
+    return { name: 'Google Chrome', webmcp: 'flag',
+      why: 'Chrome supports WebMCP but it is behind a flag. Enable chrome://flags/#enable-webmcp-testing and restart.' };
+  return { name: 'unrecognised', webmcp: false, why: '' };
+}
+
+const browser = browserGuess();
 const mc = document.modelContext;
+
+if (!mc) {
+  const b = document.createElement('section');
+  b.style.cssText = 'border-color:var(--no);background:color-mix(in srgb, var(--no) 8%, transparent)';
+  b.innerHTML =
+    '<h2 style="color:var(--no)">No site tools here</h2>' +
+    '<p style="margin:.2rem 0 .8rem"><strong>' + browser.name + '.</strong> ' + browser.why + '</p>' +
+    '<p style="margin:0 0 .3rem">Two places this page will work:</p>' +
+    '<ol style="margin:0 0 0 1.1rem;padding:0">' +
+      '<li>The <strong>ChatGPT desktop app</strong>’s built-in browser, on GPT-5.6 Sol or Terra. ' +
+        'Not the web app, not mobile, and not on Enterprise or Edu workspaces.</li>' +
+      '<li><strong>Google Chrome</strong> (real Chrome, not Edge) with ' +
+        '<code>chrome://flags/#enable-webmcp-testing</code> enabled, then restarted.</li>' +
+    '</ol>';
+  document.querySelector('main').insertBefore(b, document.querySelector('section'));
+}
+
+envRow('browser', browser.name);
 envRow('document.modelContext', mc ? 'present' : 'MISSING', !!mc);
 if (mc) {
   envRow('registerTool', typeof mc.registerTool, typeof mc.registerTool === 'function');
@@ -196,7 +231,8 @@ async function report() {
 
 let extraController = null;
 document.getElementById('reg').onclick = async () => {
-  if (!mc || extraController) return;
+  if (!mc) { log('cannot register: no document.modelContext in ' + browser.name); return; }
+  if (extraController) { log('measure_headroom is already registered'); return; }
   extraController = new AbortController();
   await mc.registerTool({
     name: 'measure_headroom',
@@ -209,7 +245,8 @@ document.getElementById('reg').onclick = async () => {
   await report();
 };
 document.getElementById('unreg').onclick = async () => {
-  if (!extraController) return;
+  if (!mc) { log('cannot remove: no document.modelContext in ' + browser.name); return; }
+  if (!extraController) { log('nothing to remove, measure_headroom is not registered'); return; }
   extraController.abort(); extraController = null;
   log('aborted measure_headroom');
   await report();
