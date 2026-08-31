@@ -16,6 +16,9 @@
 export const SOURCE = {
   MEASURED: 'measured',
   STANDARD: 'standard',
+  // Derived rather than read off a tape, and stated as such. Only legitimate
+  // where the answer has been shown not to depend on the exact value.
+  ESTIMATED: 'estimated',
   PROVISIONAL: 'provisional'
 };
 
@@ -47,8 +50,11 @@ export const STAIRCASE = {
     treads: n(3, SOURCE.PROVISIONAL, 'Three pie-shaped treads visible in photos 172641, 172706, 172710.'),
     widthA: n(41.5, SOURCE.PROVISIONAL, 'Assumed equal to the run. The tape ran off the frame in 172846.'),
     widthB: n(41.5, SOURCE.PROVISIONAL, 'Assumed equal to the run. The tape ran off the frame in 172706.'),
-    headroom: n(78, SOURCE.PROVISIONAL,
-      'NOT MEASURED. The soffit crosses directly above the turn. This is the number most likely to decide the verdict.')
+    headroom: n(80, SOURCE.ESTIMATED,
+      'Estimated, not read off a tape: photographs 20260831_194941 and _194954 both ran off the ' +
+      'frame. It does not need to be exact. eval/headroom_sensitivity.mjs sweeps every plausible ' +
+      'value from 5 to 8 feet and the verdict never moves, because the couch fails on plan length ' +
+      'at zero tilt and so headroom never enters the calculation.')
   },
 
   doors: [

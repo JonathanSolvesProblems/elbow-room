@@ -209,12 +209,13 @@ you not actually measured?"*
 
 - **Rigid bodies only.** A mattress bends and a sofa's cushions compress. For anything soft the
   verdict is a lower bound on what is possible.
-- **Headroom over the turn is not yet measured.** Flagged in the app, and the damage photographs
-  show it is where things actually strike.
+- **Headroom over the turn is estimated, not measured.** Three tape attempts all ran off the edge of
+  the photograph, so rather than quote a lower bound as a reading it is marked `estimated` and
+  [`eval/headroom_sensitivity.mjs`](eval/headroom_sensitivity.mjs) sweeps every plausible value from
+  5 to 8 feet. The couch verdict never moves: it fails on plan length at zero tilt, so headroom never
+  enters the calculation. The number is honest about being derived, and the sweep is why that is
+  acceptable rather than sloppy.
 - **One staircase.** The geometry generalises; the model is currently hand-entered for this one.
-- **The couch's depth and height readings (36 in and 48 in) are not yet distinguished from each
-  other.** Every combination fails by more than 33 in, so the verdict is unaffected, but the writeup
-  should not pretend to know which is which.
 - **The ground truth is two objects.** That is n=2, stated plainly, and it is two more than an
   assertion.
 
