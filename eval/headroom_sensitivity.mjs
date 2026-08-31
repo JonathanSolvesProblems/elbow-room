@@ -43,3 +43,33 @@ console.log(
       `${ft(range.at(-1))}. It fails on plan length at zero tilt, so headroom never enters it.`
     : `\nThe verdict changes across this range. Headroom must be measured properly.`
 );
+
+/* ------------------------------------------------------------------ *
+ * The corner widths are assumed equal to the measured run. Same question.
+ * ------------------------------------------------------------------ */
+
+console.log('\nCORNER WIDTH SENSITIVITY (run measured at 41.5 in; both turn spans assumed to match)\n');
+const wrows = [];
+for (const w of [36, 38, 41.5, 44, 48, 54, 60]) {
+  const s = {
+    clearWidth: 41.5,
+    turn: { widthA: w, widthB: w, headroom: 80 },
+    doors: [{ name: 'door at the top', width: 32, height: 80, removable: true, leafThickness: 1.75 }]
+  };
+  const row = { 'turn width': ft(w) };
+  for (const [name, o] of Object.entries(objects)) {
+    const r = checkPath(o, s);
+    row[name] = r.verdict;
+    row[name + ' margin'] = ft(r.margin);
+  }
+  wrows.push(row);
+}
+console.table(wrows);
+
+const cv = new Set(wrows.map(r => r['the couch']));
+console.log(
+  cv.size === 1
+    ? `\nThe couch verdict is "${[...cv][0]}" even if the turn is 5 feet wide, half again the ` +
+      `measured run. The corner widths do not need to be exact either.`
+    : `\nThe verdict changes with corner width. These must be measured properly.`
+);
