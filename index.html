@@ -71,10 +71,11 @@
     <h2>What are you carrying</h2>
     <select id="pick"></select>
     <div class="dims" style="margin-top:.6rem">
-      <div><label>length in</label><input id="len" type="number" step="0.5"></div>
-      <div><label>depth in</label><input id="dep" type="number" step="0.5"></div>
-      <div><label>height in</label><input id="hgt" type="number" step="0.5"></div>
+      <div><label>length</label><input id="len" type="number" step="0.5"></div>
+      <div><label>depth</label><input id="dep" type="number" step="0.5"></div>
+      <div><label>height</label><input id="hgt" type="number" step="0.5"></div>
     </div>
+    <p id="dimsFt" style="margin:.4rem 0 0;font-size:12px;color:var(--mut)"></p>
 
     <div id="verdict" class="verdict no"></div>
     <p style="margin-top:.8rem"><button id="pinch">Show me where it jams</button></p>
@@ -87,6 +88,7 @@
 <script type="module">
 import { STAIRCASE, CATALOGUE, plain, plainObject, provisionalFields, SOURCE } from './app/model.js';
 import { checkPath } from './app/geometry.js';
+import { ft } from './app/units.js';
 import * as view from './app/view.js';
 
 const stair = plain(STAIRCASE);
@@ -123,6 +125,8 @@ function sync() {
 }
 
 function render() {
+  document.getElementById('dimsFt').textContent =
+    'Inches. That is ' + ft(+len.value) + ' by ' + ft(+dep.value) + ' by ' + ft(+hgt.value) + '.';
   const obj = { length: +len.value, width: +dep.value, height: +hgt.value, feetHeight: current.feetHeight };
   const r = checkPath(obj, stair);
   const el = document.getElementById('verdict');
@@ -140,7 +144,7 @@ document.getElementById('pinch').onclick = () => { view.showPinch(); render(); }
 // because a verdict computed from a placeholder is not a verdict.
 const prov = document.getElementById('prov');
 prov.innerHTML =
-  `<li><strong>${STAIRCASE.clearWidth.value}"</strong> clear width. ${STAIRCASE.clearWidth.note}</li>` +
+  `<li><strong>${ft(STAIRCASE.clearWidth.value)}</strong> clear width. ${STAIRCASE.clearWidth.note}</li>` +
   provisionalFields(STAIRCASE).map(f =>
     `<li class="warn"><strong>${f.field}</strong> is provisional. ${f.note}</li>`).join('');
 

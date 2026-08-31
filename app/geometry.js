@@ -8,6 +8,8 @@
  * Units: inches and degrees throughout. Angles internally in radians.
  */
 
+import { ft, ftShort } from './units.js';
+
 const DEG = Math.PI / 180;
 
 /* ------------------------------------------------------------------ *
@@ -109,23 +111,23 @@ export function checkPath(object, stair) {
       reasons.push({
         stage: door.name,
         pass: false,
-        detail: `Smallest cross section is ${mid.toFixed(1)} by ${thin.toFixed(1)} in. ` +
-                `The opening is ${door.width} by ${door.height} in.`
+        detail: `Smallest cross section is ${ft(mid)} by ${ft(thin)}. ` +
+                `The opening is ${ft(door.width)} by ${ft(door.height)}.`
       });
     } else {
       reasons.push({ stage: door.name, pass: true,
-        detail: `${mid.toFixed(1)} by ${thin.toFixed(1)} in clears a ${door.width} by ${door.height} in opening.` });
+        detail: `${ft(mid)} by ${ft(thin)} clears a ${ft(door.width)} by ${ft(door.height)} opening.` });
     }
   }
 
   // --- the straight run: only the cross section has to fit the width ---
   if (thin >= stair.clearWidth) {
     reasons.push({ stage: 'straight run', pass: false,
-      detail: `Even on its narrowest face the object is ${thin.toFixed(1)} in across. ` +
-              `The run is ${stair.clearWidth} in wall to stringer.` });
+      detail: `Even on its narrowest face the object is ${ft(thin)} across. ` +
+              `The run is ${ft(stair.clearWidth)} wall to stringer.` });
   } else {
     reasons.push({ stage: 'straight run', pass: true,
-      detail: `${thin.toFixed(1)} in across clears the ${stair.clearWidth} in run.` });
+      detail: `${ft(thin)} across clears the ${ft(stair.clearWidth)} run.` });
   }
 
   // --- the turn ---
@@ -168,19 +170,19 @@ export function checkPath(object, stair) {
 
   if (!best) {
     reasons.push({ stage: 'winder turn', pass: false,
-      detail: `Neither cross section fits under the ${stair.turn.headroom} in of headroom over the turn.` });
+      detail: `Neither cross section fits under the ${ft(stair.turn.headroom)} of headroom over the turn.` });
   } else {
     reasons.push({
       stage: 'winder turn',
       pass: best.slack >= 0,
       detail: best.slack >= 0
         ? `Carried ${best.name} and tilted ${best.tilt.toFixed(0)} degrees it presents ` +
-          `${best.planLength.toFixed(1)} in in plan, inside the ${best.corner.maxLength.toFixed(1)} in ` +
+          `${ft(best.planLength)} in plan, inside the ${ft(best.corner.maxLength)} ` +
           `the turn allows at its pinch point (${best.corner.pinchAngle.toFixed(0)} degrees through the corner). ` +
-          `${best.slack.toFixed(1)} in to spare.`
+          `${ft(best.slack)} to spare.`
         : `Best case is ${best.name}, tilted ${best.tilt.toFixed(0)} degrees, which still presents ` +
-          `${best.planLength.toFixed(1)} in in plan. The turn allows ${best.corner.maxLength.toFixed(1)} in ` +
-          `at its pinch point. Short by ${(-best.slack).toFixed(1)} in.`
+          `${ft(best.planLength)} in plan. The turn allows ${ft(best.corner.maxLength)} ` +
+          `at its pinch point. Short by ${ftShort(best.slack)}.`
     });
   }
 
@@ -210,23 +212,23 @@ function suggest(object, stair, flat, tilt, thin, mid, len) {
       objectWidth: mid - object.feetHeight
     });
     if (without.maxLength > flat.maxLength) {
-      out.push(`Taking the feet off drops the width by ${object.feetHeight} in and buys ` +
-               `${(without.maxLength - flat.maxLength).toFixed(1)} in through the turn.`);
+      out.push(`Taking the feet off drops the width by ${ft(object.feetHeight)} and buys ` +
+               `${ft(without.maxLength - flat.maxLength)} through the turn.`);
     }
   }
 
   const doorLeaf = stair.doors.find(d => d.removable);
   if (doorLeaf) {
     out.push(`Pulling the ${doorLeaf.name} off its hinges widens that opening by about ` +
-             `${doorLeaf.leafThickness || 1.75} in and clears the swing entirely.`);
+             `${ft(doorLeaf.leafThickness || 1.75)} and clears the swing entirely.`);
   }
 
   const needed = len * Math.cos(tilt * DEG) - flat.maxLength;
   if (needed > 0) {
     const headroomNeeded = headroomFor(len, thin, flat.maxLength);
     if (headroomNeeded && headroomNeeded > stair.turn.headroom) {
-      out.push(`To tilt it far enough you would need ${headroomNeeded.toFixed(0)} in of headroom ` +
-               `over the turn. There is ${stair.turn.headroom} in.`);
+      out.push(`To tilt it far enough you would need ${ft(headroomNeeded)} of headroom ` +
+               `over the turn. There is ${ft(stair.turn.headroom)}.`);
     }
   }
 
