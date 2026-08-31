@@ -83,8 +83,11 @@ in plan with **3 ft 9½ in to spare** and *still* gouged the soffit. Fitting and
 touching anything are different answers, so under a foot of margin the verdict now says so.
 
 The damage also locates the constraint the model is weakest on. The gouges are on the **soffit
-edge**, and headroom over the turn is the one figure still standing on a placeholder. The damage is
-marking where the tape needs to go.
+edge**, which is the one figure that could not be read off a tape. Rather than guess at it, the sweep
+in [`eval/headroom_sensitivity.mjs`](eval/headroom_sensitivity.mjs) checks whether it matters: across
+every value from 5 to 8 feet the couch verdict never moves, because it fails on plan length at zero
+tilt. The one cell that changes anywhere in the sweep is the water heater dropping to *goes, tight*
+at an implausible 5 feet.
 
 ---
 
