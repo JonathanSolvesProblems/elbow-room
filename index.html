@@ -32,7 +32,7 @@
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
   .wrap { display:grid; grid-template-columns:1fr 23rem; min-height:100vh; }
-  @media (max-width:1024px) { .wrap { grid-template-columns:1fr; } .stage { min-height:56vh; } }
+  @media (max-width:1024px) { .wrap { grid-template-columns:1fr; } .stage { height:62vh; } }
   @media (max-width:560px) {
     aside { padding:1.1rem .9rem 2.5rem; }
     .hub { font-size:12px; padding:.4rem .5rem; }
@@ -42,12 +42,13 @@
     .hint { display:none; }
   }
 
-  .stage { position:relative; display:grid; gap:1px; background:var(--line); min-height:62vh; }
+  .stage { position:relative; display:grid; grid-template-rows:1fr; gap:1px;
+           background:var(--line); height:calc(100vh - 2.35rem); overflow:hidden; }
   .stage[data-view="both"] { grid-template-rows:1fr 1fr; }
   @media (min-width:1180px) { .stage[data-view="both"] { grid-template-rows:none; grid-template-columns:1fr 1fr; } }
   .stage[data-view="plan"] [data-pane="solid"],
   .stage[data-view="solid"] [data-pane="plan"] { display:none; }
-  .pane { position:relative; background:var(--bg); min-height:30vh; overflow:hidden; }
+  .pane { position:relative; background:var(--bg); min-height:0; overflow:hidden; }
   .panelabel { position:absolute; top:.7rem; left:.9rem; z-index:2; font-size:10.5px;
                text-transform:uppercase; letter-spacing:.09em; color:var(--mut); pointer-events:none; }
   .tabs { position:absolute; top:.6rem; right:.7rem; z-index:5; display:flex; gap:.15rem;

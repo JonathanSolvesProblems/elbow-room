@@ -239,8 +239,8 @@ export function frameAll() {
   const straight = Math.max(1, M.treads - M.winders);
   const reach = (Math.max(M.a, M.b) + straight * M.going) * IN;
   const t = new THREE.Vector3(M.b * IN * 0.5, straight * M.rise * IN * 0.7, M.a * IN * 0.5);
-  const d = reach * 1.55;
-  camera.position.set(t.x + d * 0.85, t.y + d * 0.72, t.z + d * 0.95);
+  const d = reach * 2.35;                       // stand well back
+  camera.position.set(t.x + d * 0.72, t.y + d * 0.55, t.z + d * 0.86);
   controls.target.copy(t);
   controls.update();
 }
