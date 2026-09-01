@@ -24,7 +24,7 @@ let M = {
   a: 41.5, b: 41.5, headroom: 80,
   rise: 7.5, going: 9.5, treads: 9, winders: 3,
   object: { length: 91, width: 36, height: 48, shape: 'sofa' },
-  tilt: 0, upright: false, blocked: true,
+  tilt: 0, upright: false, blocked: true, touching: false,
   pos: { x: 100, y: 20 }, yaw: 0
 };
 
@@ -91,6 +91,7 @@ export function attach(canvas) {
 
   build();
   bindDrag(canvas);
+  bindKeys(canvas);
   window.addEventListener('elbowroom:camera', e => {
     const sph = new THREE.Spherical().setFromVector3(
       camera.position.clone().sub(controls.target));
@@ -132,6 +133,14 @@ function resize() {
 function loop() {
   raf = requestAnimationFrame(loop);
   controls.update();
+  // A slow pulse while the pose is clear, so a good position announces itself
+  // rather than waiting to be read off the sidebar.
+  if (objectMesh && !M.touching) {
+    const t = performance.now() / 620;
+    objectMesh.material.emissiveIntensity = 0.16 + 0.14 * (0.5 + 0.5 * Math.sin(t));
+  } else if (objectMesh) {
+    objectMesh.material.emissiveIntensity = 0.1;
+  }
   renderer.render(scene, camera);
 }
 
@@ -185,6 +194,40 @@ function bindDrag(canvas) {
   };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
+}
+
+/**
+ * Nudge the object with the keyboard.
+ *
+ * Dragging is fine for a big move and hopeless for the last inch, which is
+ * exactly where a carry is decided. Arrows and WASD step it, shift steps
+ * further, and the axes follow the camera so "up" always means away from you.
+ */
+function bindKeys(canvas) {
+  canvas.tabIndex = 0;
+  const nudge = (dx, dy) => {
+    M.pos = clampToShaft(M.pos.x + dx, M.pos.y + dy);
+    placeObject();
+    if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
+  };
+  const handler = e => {
+    const k = e.key.toLowerCase();
+    const map = { arrowup: [0, 1], w: [0, 1], arrowdown: [0, -1], s: [0, -1],
+                  arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0] };
+    const v = map[k];
+    if (!v) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 6 : 1.5;
+    // Move in the camera's frame, so the keys mean what they look like.
+    const f = new THREE.Vector3();
+    camera.getWorldDirection(f); f.y = 0; f.normalize();
+    const r = new THREE.Vector3().crossVectors(f, new THREE.Vector3(0, 1, 0)).normalize();
+    const dx = (f.x * v[1] + r.x * v[0]) * step;
+    const dy = (f.z * v[1] + r.z * v[0]) * step;
+    nudge(dx / 1, dy / 1);
+  };
+  canvas.addEventListener('keydown', handler);
+  canvas.addEventListener('pointerdown', () => canvas.focus());
 }
 
 /**
@@ -244,7 +287,7 @@ function build() {
   const NOSE    = 1.0 * IN;       // overhang past the riser
 
   /** One step. `along` is the travel axis: 'x' for the lower arm, 'y' for the upper. */
-  const step = (along, mid, width, topZ) => {
+  const step = (along, mid, width, topZ, uphill) => {
     const g = along === 'x'
       ? new THREE.BoxGeometry(G + NOSE, TREAD_T, width)
       : new THREE.BoxGeometry(width, TREAD_T, G + NOSE);
@@ -258,7 +301,9 @@ function build() {
       ? new THREE.BoxGeometry(RISER_T, R - TREAD_T, width)
       : new THREE.BoxGeometry(width, R - TREAD_T, RISER_T);
     const r2 = new THREE.Mesh(rg, woodSide);
-    const back = along === 'x' ? mid + G / 2 : mid + G / 2;
+    // The riser is the back of the step, which is the uphill side. The lower
+    // arm climbs as x decreases, the upper as y increases, so they differ.
+    const back = mid + uphill * G / 2;
     r2.position.set(along === 'x' ? back : width / 2, topZ - TREAD_T - (R - TREAD_T) / 2,
                     along === 'x' ? width / 2 : back);
     r2.castShadow = r2.receiveShadow = true;
@@ -268,7 +313,7 @@ function build() {
   let h = 0;
   for (let i = 0; i < straight; i++) {
     const x = B + (straight - i - 0.5) * G;
-    step('x', x, A, h + R);
+    step('x', x, A, h + R, -1);
     h += R;
   }
   // Winders: three pie treads sharing the 90 degrees, each ray clipped where it
@@ -333,7 +378,7 @@ function build() {
   // Upper arm, climbing away from the turn.
   for (let i = 0; i < straight; i++) {
     const y = A + (i + 0.5) * G;
-    step('y', y, B, h + R);
+    step('y', y, B, h + R, +1);
     h += R;
   }
 
@@ -407,7 +452,8 @@ function placeObject() {
   if (objectMesh) { scene.remove(objectMesh); objectMesh.geometry.dispose(); }
 
   const { length: L, width: W, height: H, shape } = M.object;
-  const colour = M.blocked ? 0xe0603f : 0x3fb27f;
+  // Red where it is against a wall right now, green where this pose is clear.
+  const colour = M.touching ? 0xe0603f : 0x3fb27f;
   const mat = new THREE.MeshStandardMaterial({
     color: colour, transparent: true, opacity: .55, roughness: .5,
     emissive: colour, emissiveIntensity: .12
