@@ -14,13 +14,15 @@ around the turn.
 
 ## Why this exists
 
-I could not get a couch up the basement stairs of a 1970s house. The
-flight turns through 90 degrees on three winder treads, and the couch went up, jammed, came back
-down, and took some of the wall with it.
+I could not get a couch up the basement stairs. It stopped dead at the turn and would not go round,
+whichever way I tipped it. It came out in the end, and it took some of the wall with it.
 
-Then it happened again to someone else. In July 2026 a flood forced a water-heater replacement, and
-the installers carried a 279 litre tank down the same stairs with no wall protection. The gouges
-along the soffit edge in `docs/damage-soffit.jpg` are theirs, not the couch's.
+The stairs are in a 1970s house, and the flight turns through 90 degrees on
+three winder treads. Pie-shaped steps, no landing, nowhere to stand the thing up and swing it.
+
+Then it happened to someone else. A flood in July 2026 forced a water-heater replacement, and the
+installers brought a 279 litre tank down the same stairs without putting anything on the walls
+first. The gouges along the soffit edge in `docs/damage-soffit.jpg` are theirs, not the couch's.
 
 Two objects. One staircase. Nobody measured it either time, and there was nowhere to look it up:
 
