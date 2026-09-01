@@ -28,11 +28,6 @@
 
   .stage { position:relative; }
   canvas { width:100%; height:100%; min-height:60vh; display:block; touch-action:none; }
-  .section { position:absolute; right:1rem; bottom:1rem; width:min(24rem,46%); height:11rem;
-             border:1px solid var(--line); border-radius:9px; background:var(--card); padding:.4rem; }
-  .section canvas { width:100%; height:calc(100% - 1rem); min-height:0; }
-  .seclabel { font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); }
-  @media (max-width:860px) { .section { position:static; width:auto; margin:.75rem 1rem; } }
   .hint { position:absolute; left:1rem; bottom:1rem; color:var(--mut); font-size:12.5px;
           background:var(--card); border:1px solid var(--line); border-radius:7px; padding:.4rem .6rem; }
 
@@ -79,18 +74,21 @@
   body.embedded { overflow:hidden; }
   body.embedded aside { display:none; }
   body.embedded .wrap { grid-template-columns:1fr; }
-  body.embedded .section { width:min(20rem,42%); height:9rem; }
-  body.embedded canvas { min-height:0; height:100vh; }
+  body.embedded .stage { grid-template-rows:none; grid-template-columns:1fr 1fr; min-height:0; height:100vh; }
+  body.embedded .pane { min-height:0; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="stage">
-    <canvas id="cv"></canvas>
-    <div class="hint">Drag to move. Scroll to rotate.</div>
-    <div class="section">
-      <span class="seclabel">Section through the turn</span>
-      <canvas id="sec"></canvas>
+    <div class="pane">
+      <span class="panelabel">Plan · looking down on the turn</span>
+      <canvas id="cv"></canvas>
+      <div class="hint">Drag to move. Scroll to rotate.</div>
+    </div>
+    <div class="pane">
+      <span class="panelabel">The shaft · treads, winders and the soffit</span>
+      <canvas id="iso"></canvas>
     </div>
   </div>
 
