@@ -230,6 +230,32 @@ function loadMine() {
   return n > 0;
 }
 
+/**
+ * And whatever you measured about the thing you are carrying.
+ *
+ * The same four clicks that size a stairwell size a couch in a shop, so a
+ * photograph taken next to the price tag arrives here as the object on the
+ * canvas. Returns its label if anything came across.
+ */
+function loadObject() {
+  let raw = null;
+  try { raw = localStorage.getItem('elbowroom.object'); } catch { return null; }
+  if (!raw) return null;
+  let o; try { o = JSON.parse(raw); } catch { return null; }
+  if (!o || typeof o !== 'object') return null;
+  const num = v => (typeof v === 'number' && isFinite(v) && v > 0 ? v : null);
+  const L = num(o.length), D = num(o.depth), H = num(o.height);
+  if (!L && !D && !H) return null;
+  const base = app.dims || { length: 60, depth: 24, height: 24 };
+  app.setDims({
+    length: L || base.length,
+    depth: D || base.depth,
+    height: H || base.height,
+    label: String(o.label || 'Measured from a photograph').slice(0, 40)
+  });
+  return { label: app.current.label, L, D, H };
+}
+
 export function boot() {
   view.state.a = STAIRCASE.turn.widthA.value;
   view.state.b = STAIRCASE.turn.widthB.value;
@@ -256,7 +282,21 @@ export function boot() {
         hgt = document.getElementById('hgt');
 
   app.onChange(() => {
-    pick.value = app.current.id;
+    // A custom object, measured from a photograph or typed by the agent, is not
+    // in the catalogue, so the dropdown had nothing to select and went blank.
+    // Give it a row of its own and keep the name visible.
+    if (!CATALOGUE.some(c => c.id === app.current.id)) {
+      let o = pick.querySelector('option[value="custom"]');
+      if (!o) {
+        o = document.createElement('option');
+        o.value = 'custom';
+        pick.appendChild(o);
+      }
+      o.textContent = app.current.label;
+      pick.value = 'custom';
+    } else {
+      pick.value = app.current.id;
+    }
     len.value = app.dims.length;
     dep.value = app.dims.depth;
     hgt.value = app.dims.height;
@@ -314,6 +354,21 @@ export function boot() {
   view.onChange(() => app.emit());
 
   app.select(CATALOGUE[0].id);
-  if (loadMine()) app.sync();
+  const mine = loadMine();
+  const carried = loadObject();
+  if (mine || carried) app.sync();
+  if (carried) {
+    const el = document.getElementById('mine');
+    if (el) {
+      el.hidden = false;
+      const parts = [];
+      if (carried.L) parts.push(`${ft(carried.L)} long`);
+      if (carried.D) parts.push(`${ft(carried.D)} deep`);
+      if (carried.H) parts.push(`${ft(carried.H)} high`);
+      el.innerHTML = (mine ? el.innerHTML + '<br><br>' : '') +
+        `<strong>${carried.label}</strong> was measured from your photograph too, ` +
+        `${parts.join(', ')}. It is on the canvas now.`;
+    }
+  }
   registerTools(app);
 }

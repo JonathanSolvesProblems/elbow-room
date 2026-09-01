@@ -192,18 +192,34 @@
 
     <h2>Assign to your staircase</h2>
     <select id="field">
-      <option value="clearWidth">Clear width of the run</option>
-      <option value="turn.widthA">Turn, first span</option>
-      <option value="turn.widthB">Turn, second span</option>
-      <option value="turn.headroom">Headroom over the turn</option>
-      <option value="run.rise">Rise of one step</option>
-      <option value="run.going">Going, the tread depth</option>
+      <optgroup label="The staircase">
+        <option value="clearWidth">Clear width of the run</option>
+        <option value="turn.widthA">Turn, first span</option>
+        <option value="turn.widthB">Turn, second span</option>
+        <option value="turn.headroom">Headroom over the turn</option>
+        <option value="run.rise">Rise of one step</option>
+        <option value="run.going">Going, the tread depth</option>
+      </optgroup>
+      <optgroup label="What you are carrying">
+        <option value="object.length">Its longest side</option>
+        <option value="object.depth">Its depth</option>
+        <option value="object.height">Its height</option>
+      </optgroup>
     </select>
     <button id="assign" disabled>Save this reading</button>
     <p class="note" id="assignWhy" style="margin-top:.4rem"></p>
     <ul class="marks" id="marks"></ul>
     <p class="note" id="forgetWrap" hidden style="margin-top:.3rem">
       <a href="#" id="forget" style="color:var(--mut)">Forget these readings</a></p>
+
+    <div id="objBox" hidden>
+      <h2>What you are carrying</h2>
+      <p class="note" style="margin:0 0 .5rem">The same photograph trick works on the couch in the
+        shop. Measure it there, and it arrives in the planner as the thing to get up your stairs.</p>
+      <label>call it</label>
+      <input id="objName" placeholder="The couch in the shop" maxlength="40">
+      <ul class="marks" id="objMarks"></ul>
+    </div>
 
     <h2>Count the steps</h2>
     <p class="note" style="margin:0 0 .5rem">These are counted, not measured, and they decide the
@@ -1084,6 +1100,10 @@ function restore() {
   const t = document.getElementById('cTreads'), w = document.getElementById('cWinders');
   if (t && saved['run.treads']) t.value = Math.round(saved['run.treads']);
   if (w && saved['turn.treads']) w.value = Math.round(saved['turn.treads']);
+  try {
+    const o = JSON.parse(localStorage.getItem('elbowroom.object') || 'null');
+    if (o && o.label) document.getElementById('objName').value = o.label;
+  } catch { /* nothing kept */ }
 }
 
 document.getElementById('forget').onclick = e => {
@@ -1093,11 +1113,33 @@ document.getElementById('forget').onclick = e => {
   renderMarks(); readout();
 };
 
+const LABEL = {
+  clearWidth: 'clear width', 'turn.widthA': 'turn, first span',
+  'turn.widthB': 'turn, second span', 'turn.headroom': 'headroom',
+  'run.rise': 'rise', 'run.going': 'going', 'run.treads': 'steps',
+  'turn.treads': 'pie-shaped steps',
+  'object.length': 'longest side', 'object.depth': 'depth', 'object.height': 'height'
+};
+
+/**
+ * Readings land in one of two places.
+ *
+ * Everything the homography can do to a staircase it can do to a couch, and the
+ * couch is the other half of the question. So a reading either sizes the
+ * stairwell or sizes the thing being carried up it, and the two lists are kept
+ * apart because they travel to the planner as different things.
+ */
+const isObject = k => k.startsWith('object.');
+
 function renderMarks() {
-  const n = Object.keys(saved).length;
-  document.getElementById('marks').innerHTML = Object.entries(saved)
-    .map(([k, v]) => `<li><span>${k}</span><span>${ft(v)}</span></li>`).join('');
-  document.getElementById('forgetWrap').hidden = !n;
+  const rows = Object.entries(saved);
+  const stair = rows.filter(([k]) => !isObject(k));
+  const obj = rows.filter(([k]) => isObject(k));
+  const li = ([k, v]) => `<li><span>${LABEL[k] || k}</span><span>${ft(v)}</span></li>`;
+  document.getElementById('marks').innerHTML = stair.map(li).join('');
+  document.getElementById('objMarks').innerHTML = obj.map(li).join('');
+  document.getElementById('objBox').hidden = obj.length === 0;
+  document.getElementById('forgetWrap').hidden = rows.length === 0;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -1191,6 +1233,8 @@ document.getElementById('saveSession').onclick = () => {
   renderSessions();
 };
 
+const OBJECT = 'elbowroom.object';
+
 document.getElementById('send').onclick = () => {
   Object.assign(saved, counts());
   persist();
@@ -1199,6 +1243,24 @@ document.getElementById('send').onclick = () => {
     if (photo) localStorage.setItem(PHOTO, photo);
     else localStorage.removeItem(PHOTO);
   } catch { /* the staircase still goes over without its skin */ }
+
+  // Anything measured about the object travels separately: it is not part of
+  // the building, and the planner puts it on the canvas rather than into the
+  // staircase model.
+  const obj = {};
+  for (const [k, v] of Object.entries(saved)) {
+    if (isObject(k)) obj[k.slice(7)] = v;
+  }
+  try {
+    if (Object.keys(obj).length) {
+      obj.label = (document.getElementById('objName').value || '').trim().slice(0, 40)
+                  || 'Measured from a photograph';
+      localStorage.setItem(OBJECT, JSON.stringify(obj));
+    } else {
+      localStorage.removeItem(OBJECT);
+    }
+  } catch { /* the staircase still goes over */ }
+
   location.href = '/?mine=1';
 };
 
