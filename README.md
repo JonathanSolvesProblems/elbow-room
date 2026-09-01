@@ -186,9 +186,10 @@ fails on plan length at zero tilt, so it cannot rescue the verdict either way.
 
 ## Running it
 
-**Browser.** Site tools need WebMCP. Either ChatGPT's desktop in-app browser, or Google Chrome 149+
-with `chrome://flags/#enable-webmcp-testing` enabled and restarted. Anywhere else the app still
-works by hand and tells you why the agent half is missing. It is not available in Edge.
+**Browser.** Site tools need WebMCP. Either ChatGPT's desktop in-app browser, or a Chromium browser
+149+ with `chrome://flags/#enable-webmcp-testing` enabled and restarted. Verified working in both
+Chrome and Microsoft Edge 152. Anywhere else the app still works by hand and tells you which browsers
+do support it.
 
 **Locally.** No build step and no backend. Static ES modules.
 

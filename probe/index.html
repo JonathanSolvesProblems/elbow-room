@@ -96,8 +96,9 @@ function envRow(k, v, good) {
 /** Name the browser, because "MISSING" on its own sends people hunting for a bug. */
 function browserGuess() {
   const ua = navigator.userAgent;
-  if (/Edg\//.test(ua))       return { name: 'Microsoft Edge', webmcp: false,
-    why: 'Edge does not ship WebMCP. Nothing you do on this page will register a tool.' };
+  if (/Edg\//.test(ua))       return { name: 'Microsoft Edge', webmcp: 'flag',
+    why: 'Edge is Chromium underneath and does expose WebMCP once the flag is on. ' +
+         'Enable edge://flags/#enable-webmcp-testing and restart.' };
   if (/OPR\//.test(ua))       return { name: 'Opera', webmcp: false,
     why: 'Opera does not ship WebMCP.' };
   if (/Firefox\//.test(ua))   return { name: 'Firefox', webmcp: false,
@@ -122,8 +123,9 @@ if (!mc) {
     '<ol style="margin:0 0 0 1.1rem;padding:0">' +
       '<li>The <strong>ChatGPT desktop app</strong>’s built-in browser, on GPT-5.6 Sol or Terra. ' +
         'Not the web app, not mobile, and not on Enterprise or Edu workspaces.</li>' +
-      '<li><strong>Google Chrome</strong> (real Chrome, not Edge) with ' +
-        '<code>chrome://flags/#enable-webmcp-testing</code> enabled, then restarted.</li>' +
+      '<li><strong>Google Chrome or Microsoft Edge</strong> with ' +
+        '<code>chrome://flags/#enable-webmcp-testing</code> (or <code>edge://flags/…</code>) ' +
+        'enabled, then restarted.</li>' +
     '</ol>';
   document.querySelector('main').insertBefore(b, document.querySelector('section'));
 }
