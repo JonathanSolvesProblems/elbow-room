@@ -9,6 +9,12 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg:#141310; --fg:#eeece6; --mut:#98928a; --line:#2c2924; --card:#1c1a16; --ok:#6cc48d; --no:#e08a72; }
   }
+  .hub { display:flex; gap:.15rem; align-items:center; flex-wrap:wrap;
+         border-bottom:1px solid var(--line); background:var(--card); padding:.45rem .8rem;
+         font-size:12.5px; }
+  .hub a { color:var(--mut); text-decoration:none; padding:.3rem .55rem; border-radius:6px; }
+  .hub a:hover { color:var(--fg); background:var(--bg); }
+  .hub a[aria-current] { color:var(--fg); font-weight:600; background:var(--bg); }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
@@ -53,6 +59,13 @@
 </style>
 </head>
 <body>
+<nav class="hub">
+  <a href="https://elbow-room-sand.vercel.app/">Planner</a>
+  <a href="https://elbow-room-sand.vercel.app/measure/">Measure yours</a>
+  <a href="/" aria-current="page">The shop &middot; cross-origin</a>
+  <a href="https://elbow-room-sand.vercel.app/probe/">Probe</a>
+  <a href="https://github.com/JonathanSolvesProblems/elbow-room">Code</a>
+</nav>
 <header>Halliwell &amp; Co <span>a fictional furniture shop, built to demonstrate cross-origin WebMCP</span></header>
 
 <main>
