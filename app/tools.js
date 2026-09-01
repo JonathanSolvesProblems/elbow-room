@@ -138,10 +138,18 @@ export function registerTools(app) {
       'changing anything.',
     inputSchema: { type: 'object', properties: {} },
     annotations: R,
-    execute: async () => reply(
-      `${app.current.label}: ${app.dims.length} x ${app.dims.depth} x ${app.dims.height} in ` +
-      `(${ft(app.dims.length)} long). Door leaf ${app.doorRemoved ? 'removed' : 'in place'}.`
-    )
+    execute: async () => {
+      // The description has always promised where it sits and at what angle,
+      // and the reply left both out, so an agent asking this got less than it
+      // was told to expect and no way to see the effect of place_object.
+      const p = app.pose();
+      return reply(
+        `${app.current.label}: ${app.dims.length} x ${app.dims.depth} x ${app.dims.height} in ` +
+        `(${ft(app.dims.length)} long). Door leaf ${app.doorRemoved ? 'removed' : 'in place'}.\n` +
+        `Sitting at x ${p.x.toFixed(1)} in, y ${p.y.toFixed(1)} in from the outer corner, ` +
+        `turned ${p.angle.toFixed(0)} degrees.`
+      );
+    }
   });
 
   reg({

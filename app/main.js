@@ -58,6 +58,11 @@ export const app = {
 
   unknowns() { return provisionalFields(this.stairModel); },
 
+  /** Where the object is standing, in inches and degrees from the outer corner. */
+  pose() {
+    return { x: view.state.pos.x, y: view.state.pos.y, angle: view.state.angle };
+  },
+
   /* ---- writes. every one of these must move something on screen ---- */
 
   select(id) {
