@@ -213,6 +213,12 @@ export function checkPath(object, stair) {
     margin: best ? best.slack : -Infinity,
     tiltUsed: best ? best.tilt : 0,
     orientation: best ? best.name : null,
+    // What the object actually presents to the floor once carried the way the
+    // solver chose. A water heater stood on end is a 24 inch circle, not a
+    // 60 inch rectangle, and the plan view was drawing the rectangle.
+    footprint: best
+      ? { length: best.planLength, width: best.planWidth, tilt: best.tilt, upright: best.tilt >= 60 }
+      : { length: len, width: mid, tilt: 0, upright: false },
     advice: failures.length && best
       ? suggest(object, stair, best.corner, best.tilt, best.planWidth, best.vert, len) : []
   };

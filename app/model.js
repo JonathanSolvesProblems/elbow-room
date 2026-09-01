@@ -97,6 +97,7 @@ export const STAIRCASE = {
 export const CATALOGUE = [
   {
     id: 'the-couch',
+    shape: 'sofa',
     label: 'The couch',
     length: n(91, SOURCE.MEASURED,
       'Arm to arm. Photo 20260831_182518, tape reading just past 90 at the outer arm edge.'),
@@ -109,6 +110,7 @@ export const CATALOGUE = [
   },
   {
     id: 'sofa-3seat',
+    shape: 'sofa',
     label: 'Typical 3-seat sofa',
     length: n(84, SOURCE.PROVISIONAL, 'Industry-typical, for comparison against the measured one.'),
     depth:  n(38, SOURCE.PROVISIONAL, 'Typical.'),
@@ -117,6 +119,7 @@ export const CATALOGUE = [
   },
   {
     id: 'water-tank',
+    shape: 'cylinder',
     label: 'Water heater, 279 L',
     length: n(59.875, SOURCE.STANDARD,
       'Giant 172E-3F8M Super Cascade, height from the manufacturer engineering submittal sheet.'),
@@ -127,6 +130,7 @@ export const CATALOGUE = [
   },
   {
     id: 'mattress-queen',
+    shape: 'slab',
     label: 'Queen mattress',
     length: n(80, SOURCE.STANDARD, 'North American queen, 60 x 80 in.'),
     depth:  n(60, SOURCE.STANDARD, 'North American queen.'),
@@ -136,6 +140,7 @@ export const CATALOGUE = [
   },
   {
     id: 'mattress-king',
+    shape: 'slab',
     label: 'King mattress',
     length: n(80, SOURCE.STANDARD, 'North American king, 76 x 80 in.'),
     depth:  n(76, SOURCE.STANDARD, 'North American king.'),
@@ -144,6 +149,7 @@ export const CATALOGUE = [
   },
   {
     id: 'plywood-sheet',
+    shape: 'slab',
     label: 'Sheet of plywood',
     length: n(96, SOURCE.STANDARD, 'Standard 4 x 8 ft sheet.'),
     depth:  n(48, SOURCE.STANDARD, 'Standard 4 x 8 ft sheet.'),
@@ -152,6 +158,7 @@ export const CATALOGUE = [
   },
   {
     id: 'door-leaf',
+    shape: 'slab',
     label: 'Interior door leaf',
     length: n(80, SOURCE.STANDARD, 'Standard North American leaf.'),
     depth:  n(32, SOURCE.STANDARD, 'Standard 32 in leaf.'),
@@ -159,6 +166,7 @@ export const CATALOGUE = [
   },
   {
     id: 'fridge',
+    shape: 'box',
     label: 'Fridge',
     length: n(70, SOURCE.PROVISIONAL, 'Typical full-height fridge.'),
     depth:  n(36, SOURCE.PROVISIONAL, 'Typical.'),

@@ -111,8 +111,18 @@ export const app = {
 
   /** Push dimensions into the canvas, redraw, and tell everyone. */
   sync() {
+    // Draw what the solver says is actually presented to the floor, not the raw
+    // dimensions. These are the same numbers the verdict is computed from, so
+    // the picture and the text can never disagree.
+    const f = this.verdict().footprint;
     view.update({
-      object: { length: this.dims.length, depth: this.dims.depth, label: this.current.label }
+      object: {
+        length: f.length,
+        depth: f.width,
+        label: this.current.label,
+        shape: this.current.shape || 'box',
+        upright: f.upright
+      }
     });
     this.emit();
   }

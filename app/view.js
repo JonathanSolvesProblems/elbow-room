@@ -22,7 +22,7 @@ const DEG = Math.PI / 180;
 export const state = {
   a: 41.5,
   b: 41.5,
-  object: { length: 91, depth: 36, label: 'The couch' },
+  object: { length: 91, depth: 36, label: 'The couch', shape: 'sofa', upright: false },
   pos: { x: 70, y: 20.75 },
   angle: 0,
   listeners: []
@@ -159,13 +159,15 @@ export function draw() {
   ctx.restore();
   ctx.textAlign = 'left';
 
-  // The object
+  // The object, drawn as what it actually presents to the floor.
+  //
+  // The footprint comes from the orientation the solver chose, not from the raw
+  // length and depth. A water heater is carried upright, so its footprint is a
+  // 24 inch circle rather than a 60 inch rectangle, and drawing the rectangle
+  // made the picture disagree with the maths.
   const bad = collides();
   const cs = corners();
-  ctx.beginPath();
-  ctx.moveTo(px(cs[0].x), py(cs[0].y));
-  for (let i = 1; i < 4; i++) ctx.lineTo(px(cs[i].x), py(cs[i].y));
-  ctx.closePath();
+  outline(ctx, cs, state.object.shape, state.object.upright);
   ctx.fillStyle = bad ? css('--badfill', 'rgba(163,52,31,.22)') : css('--okfill', 'rgba(28,107,63,.18)');
   ctx.fill();
   ctx.strokeStyle = bad ? css('--pinch', '#a3341f') : css('--ok', '#1c6b3f');
@@ -179,9 +181,51 @@ export function draw() {
   ctx.fillStyle = bad ? css('--pinch', '#a3341f') : css('--ok', '#1c6b3f');
   ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(`${state.object.label} · ${ft(state.object.length)}`, 0, 4);
+  ctx.fillText(
+    `${state.object.label} · ${ft(state.object.length)}` +
+    (state.object.upright ? '  (upright)' : ''), 0, 4);
   ctx.restore();
   ctx.textAlign = 'left';
+}
+
+/**
+ * Trace the object's plan outline. Rectangles are honest for sheet goods and
+ * boxes; a cylinder stood on end is a circle; a sofa has arms, and drawing them
+ * makes the thing on screen read as furniture rather than as a shape.
+ */
+function outline(ctx, cs, shape, upright) {
+  const mid = (p, q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+  ctx.beginPath();
+
+  if (shape === 'cylinder' || (upright && shape === 'box')) {
+    const c = mid(cs[0], cs[2]);
+    const rx = Math.hypot(cs[0].x - cs[1].x, cs[0].y - cs[1].y) / 2;
+    const ry = Math.hypot(cs[1].x - cs[2].x, cs[1].y - cs[2].y) / 2;
+    const rot = Math.atan2(cs[3].y - cs[0].y, cs[3].x - cs[0].x);
+    ctx.ellipse(px(c.x), py(c.y), Math.max(rx, ry) * scale, Math.min(rx, ry) * scale, -rot, 0, Math.PI * 2);
+    ctx.closePath();
+    return;
+  }
+
+  if (shape === 'sofa' && !upright) {
+    // Long sides run 0->3 and 1->2; the arms sit at each short end.
+    const t = 0.16;
+    const lerp = (p, q, k) => ({ x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k });
+    const a1 = lerp(cs[3], cs[0], t), a2 = lerp(cs[2], cs[1], t);
+    const b1 = lerp(cs[0], cs[3], t), b2 = lerp(cs[1], cs[2], t);
+    const pts = [cs[0], cs[3], cs[2], cs[1]];
+    ctx.moveTo(px(pts[0].x), py(pts[0].y));
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(px(pts[i].x), py(pts[i].y));
+    ctx.closePath();
+    // Arm rails, drawn as an inner seam so the ends read as arms.
+    ctx.moveTo(px(a1.x), py(a1.y)); ctx.lineTo(px(a2.x), py(a2.y));
+    ctx.moveTo(px(b1.x), py(b1.y)); ctx.lineTo(px(b2.x), py(b2.y));
+    return;
+  }
+
+  ctx.moveTo(px(cs[0].x), py(cs[0].y));
+  for (let i = 1; i < 4; i++) ctx.lineTo(px(cs[i].x), py(cs[i].y));
+  ctx.closePath();
 }
 
 /* ------------------------------------------------------------------ *
