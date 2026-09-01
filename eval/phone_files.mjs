@@ -46,4 +46,51 @@ for (const [f, want] of cases) {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${(f.name + ' [' + (f.type || 'no type') + ']').padEnd(38)} -> ${got}${ok ? '' : '  wanted ' + want}`);
 }
 console.log(`\n  ${pass} of ${cases.length} passed`);
-process.exit(pass === cases.length ? 0 : 1);
+/* ---------------------------------------------------------------------- *
+ * Which codec is inside the container.
+ *
+ * Both phones in this house record HEVC by default and Chrome only plays it
+ * where the operating system supplies a decoder, so this decides between a
+ * clear sentence and a loader that spins. Checked against ffprobe on the real
+ * clips during development, 11 of 11; pinned here on synthetic containers so
+ * it runs anywhere without shipping anyone's footage.
+ * ---------------------------------------------------------------------- */
+
+const vm = html.match(/async function videoCodec\(f\) \{[\s\S]*?\n\}/);
+if (!vm) { console.log('\n  videoCodec not found'); process.exit(1); }
+const videoCodec = new Function(vm[0] + '; return videoCodec;')();
+
+const blob = (marker, size = 4096, atEnd = false) => {
+  const buf = new Uint8Array(size);
+  const at = atEnd ? size - marker.length - 8 : 512;
+  for (let i = 0; i < marker.length; i++) buf[at + i] = marker.charCodeAt(i);
+  return {
+    size,
+    slice(a, b) {
+      const s = buf.subarray(a, b === undefined ? size : b);
+      return { arrayBuffer: async () => s.buffer.slice(s.byteOffset, s.byteOffset + s.byteLength) };
+    }
+  };
+};
+
+const codecCases = [
+  ['hvc1 near the front', blob('hvc1'), 'hevc'],
+  ['hev1 near the front', blob('hev1'), 'hevc'],
+  ['avc1 near the front', blob('avc1'), 'h264'],
+  ['av01 near the front', blob('av01'), 'av1'],
+  ['vp09 near the front', blob('vp09'), 'vp9'],
+  ['hvc1 in a trailing index', blob('hvc1', 8 * 1024 * 1024, true), 'hevc'],
+  ['nothing recognisable',   blob('zzzz'), null],
+];
+
+console.log('\n  video codec inside the container');
+let cpass = 0;
+for (const [label, f, want] of codecCases) {
+  const got = await videoCodec(f);
+  const good = got === want;
+  if (good) cpass++;
+  console.log(`  ${good ? 'PASS' : 'FAIL'}  ${label.padEnd(38)} -> ${got}${good ? '' : '  wanted ' + want}`);
+}
+console.log(`\n  ${cpass} of ${codecCases.length} passed`);
+
+process.exit(pass === cases.length && cpass === codecCases.length ? 0 : 1);
