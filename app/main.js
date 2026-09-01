@@ -193,6 +193,19 @@ function loadMine() {
   if (n) {
     STAIRCASE.label = 'Your staircase, measured from a photograph';
     app.stair = plain(STAIRCASE);
+    // Say it at the top. The provenance list at the foot of the sidebar already
+    // carried the proof, but someone who has just measured their own stairwell
+    // arrives to a page that looks exactly like the one they left.
+    const el = document.getElementById('mine');
+    if (el) {
+      el.hidden = false;
+      el.innerHTML = `<strong>This is your staircase.</strong> ${n} reading` +
+        `${n > 1 ? 's' : ''} from your own photograph, kept in this browser. ` +
+        `Everything below is computed from ${n > 1 ? 'them' : 'it'}. ` +
+        `<a href="/">Use the 1970s house instead</a>.`;
+    }
+    const tag = document.getElementById('tag');
+    if (tag) tag.textContent = 'Before you buy the couch, find out whether it can get up the stairs.';
   }
   return n > 0;
 }
