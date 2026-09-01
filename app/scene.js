@@ -118,8 +118,11 @@ function build() {
   const woodSide = new THREE.MeshStandardMaterial({ color: 0xd9cdb8, roughness: .9 });
   // BackSide only: seen from outside the shaft the walls vanish, so you can
   // look in. Standing inside, they are there.
-  const wallMat = new THREE.MeshStandardMaterial({ map: photo('/docs/tex-wall.jpg', 4), roughness: 1,
-                                                   side: THREE.BackSide });
+  // Plaster, tiled small and tinted down so it reads as a surface rather than
+  // as a photograph. A crop with stairs in it tiled into wallpaper of stairs.
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: photo('/docs/tex-wall.jpg', 7), color: 0x9c9184, roughness: 1, side: THREE.BackSide
+  });
 
   // Treads run down to the floor rather than floating, which is what a flight
   // actually looks like from the side and what was missing before.
