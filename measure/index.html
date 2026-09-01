@@ -126,9 +126,11 @@
       <strong>Drop photos or a video of your stairwell</strong>
       Drop several and the sharpest is picked for you. A short clip works too, and the
       clearest frame is chosen automatically.<br><br>
-      It is read in this page and never uploaded anywhere.<br><br>
+      On a phone this opens your camera roll. It is read in this page and never
+      uploaded anywhere.<br><br>
       <button id="example" style="margin:0">No photo handy? Use the real staircase</button>
-      <input type="file" id="file" accept="image/*,video/*" multiple hidden>
+      <input type="file" id="file" multiple hidden
+             accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.mp4,.mov,.m4v,.3gp">
     </div>
     <canvas id="cv" hidden></canvas>
     <canvas id="pano" hidden></canvas>
@@ -301,6 +303,8 @@ function assess(img) {
 function showAdvice(a) {
   const el = document.getElementById('advice');
   const tips = [];
+  if (skipped) tips.push(`${skipped} HEIC file${skipped > 1 ? 's were' : ' was'} skipped. ` +
+    'Chrome cannot decode that format; sharing the photo to yourself converts it to JPEG.');
   if (a.sharpness < 6) tips.push('It is soft. Hold still, or pick a different frame from the strip.');
   if (a.brightness < 55) tips.push('It is dark. Put the stair light on, corners are hard to place in shadow.');
   if (a.darkFrac > 0.35) tips.push('Large areas are in shadow. More light will make the corners findable.');
@@ -358,11 +362,52 @@ file.onchange = () => intake([...file.files]);
  * photos get scored and the sharpest is opened, with the rest one click away,
  * because the frame someone happens to drop first is rarely their best one.
  */
+/**
+ * What kind of file is this, really.
+ *
+ * Phones are the whole point of this page and phones are careless with MIME
+ * types: a clip pulled off Android over MTP, or dragged out of a file manager,
+ * often arrives with `type` empty, and the old filter dropped those on the
+ * floor with a message about JPEGs. So fall back to the extension, which is
+ * the one thing that survives every transfer.
+ */
+function kindOf(f) {
+  const t = (f.type || '').toLowerCase();
+  const ext = (f.name || '').toLowerCase().split('.').pop();
+  // HEIC first. It is the iPhone default, no Chromium build decodes it, and a
+  // copy pulled over USB usually carries no MIME type at all, so testing the
+  // image types before this one sent IMG_0001.HEIC to the generic reject.
+  if (/hei[cf]/.test(t) || ['heic', 'heif'].includes(ext)) return 'heic';
+  if (/^image\//.test(t) || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'].includes(ext)) {
+    return 'image';
+  }
+  if (/^video\//.test(t) || ['mp4', 'mov', 'm4v', 'webm', 'mkv', '3gp', 'avi'].includes(ext)) return 'video';
+  return 'other';
+}
+
+const MAX_BYTES = 900 * 1024 * 1024;
+
+/** How many files this browser had to leave behind, reported in the advice panel. */
+let skipped = 0;
+
 const gallery = [];
 async function intake(files) {
-  files = files.filter(f => /^(image|video)\//.test(f.type));
-  if (!files.length) return Loader.fail('That file type cannot be read in a browser. JPEG, PNG, WebP or MP4.');
-  const vid = files.find(f => f.type.startsWith('video/'));
+  if (!files.length) return;
+  const heic = files.filter(f => kindOf(f) === 'heic');
+  skipped = heic.length;
+  const big = files.find(f => f.size > MAX_BYTES);
+  files = files.filter(f => ['image', 'video'].includes(kindOf(f)));
+
+  if (big && !files.length) return Loader.fail(
+    `${big.name} is ${(big.size / 1e9).toFixed(1)} GB, which is more than a browser tab can hold. ` +
+    'Trim the clip on the phone first, or send a photo instead.');
+  if (!files.length && heic.length) return Loader.fail(
+    'Those are HEIC files, which Chrome cannot decode. On iPhone, Settings, Camera, Formats, ' +
+    'Most Compatible switches the camera to JPEG. Sharing a photo to yourself also converts it.');
+  if (!files.length) return Loader.fail(
+    'Nothing there a browser can read. JPEG, PNG, WebP, MP4 or MOV.');
+
+  const vid = files.find(f => kindOf(f) === 'video');
   if (vid) return load(vid);
   if (files.length === 1) return load(files[0]);
 
@@ -375,7 +420,9 @@ async function intake(files) {
     if (!img) continue;
     gallery.push({ img, name: files[i].name, a: assess(img) });
   }
-  if (!gallery.length) return Loader.fail('None of those could be decoded here.');
+  if (!gallery.length) return Loader.fail(
+    'None of those decoded in this browser. Phone photos are often HEIC even when ' +
+    'the name says otherwise; sharing one to yourself converts it to JPEG.');
   Loader.at(1, 70, 'Comparing them');
   await breathe();
   gallery.sort((p, q) => q.a.sharpness - p.a.sharpness);
@@ -424,12 +471,26 @@ function useImage(g) {
 }
 
 function load(f) {
-  if (f.type.startsWith('video/')) return loadVideo(f);
+  const kind = kindOf(f);
+  if (kind === 'heic') return Loader.fail(
+    `${f.name} is HEIC, which Chrome cannot decode. On iPhone, Settings, Camera, Formats, ` +
+    'Most Compatible switches the camera to JPEG. Sharing the photo to yourself also converts it.');
+  if (kind === 'video') return loadVideo(f);
+  if (kind !== 'image') return Loader.fail(
+    `${f.name} is not something a browser can read. JPEG, PNG, WebP, MP4 or MOV.`);
+  if (f.size > MAX_BYTES) return Loader.fail(
+    `${f.name} is ${(f.size / 1e9).toFixed(1)} GB, which is more than a browser tab can hold.`);
+
   Loader.show('Reading your photo', ['Reading the file', 'Checking the shape', 'Ready to calibrate']);
   Loader.at(0, 15, 'Reading it here in your browser. Nothing is uploaded.');
   const fr = new FileReader();
+  fr.onerror = () => Loader.fail(`${f.name} could not be read off the disk.`);
   fr.onload = () => {
     const img = new Image();
+    // A phone photo the decoder rejects has to say so. Without this the loader
+    // sat on "Reading the file" until the watchdog gave up.
+    img.onerror = () => Loader.fail(
+      `${f.name} would not decode. If it came off an iPhone it is probably HEIC despite the name.`);
     img.onload = () => {
       Loader.at(1, 65, `${img.width} by ${img.height}`);
       if (looksEquirectangular(img.width, img.height)) { Loader.done(); return startPano(img); }
@@ -462,23 +523,49 @@ function loadVideo(f) {
     'Ready to calibrate'
   ]);
   Loader.at(0, 8, 'Decoding in your browser. Nothing is uploaded.');
+  if (f.size > MAX_BYTES) return Loader.fail(
+    `${f.name} is ${(f.size / 1e9).toFixed(1)} GB, which is more than a browser tab can hold. ` +
+    'Trim it on the phone and try again.');
+
+  if (video && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
   video = document.createElement('video');
   video.preload = 'auto';
   video.muted = true;
+  // iOS refuses to decode frames from a video it considers a fullscreen player,
+  // and some browsers will not paint one that was never in the document. Both
+  // are cheap to satisfy, so satisfy them.
+  video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(video);
+
+  // A Samsung clip recorded in HEVC, or any codec this browser lacks, fails
+  // here. Say which file and why instead of spinning on "Decoding the clip".
+  video.onerror = () => Loader.fail(
+    `${f.name} would not decode. Chrome plays H.264 MP4 and MOV. ` +
+    'If the phone was set to HEVC, switch it to the compatible format and re-record.');
+
   video.src = URL.createObjectURL(f);
   video.onloadeddata = async () => {
+    // An audio-only file, or a container this browser opened but cannot paint,
+    // reports no picture. Portrait phone video is fine: videoWidth and
+    // videoHeight already carry the rotation the phone recorded.
+    if (!video.videoWidth || !video.videoHeight) return Loader.fail(
+      `${f.name} opened but has no picture in it that this browser can paint.`);
+
     const max = 1100;
     const k = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
     cv.width = video.videoWidth * k; cv.height = video.videoHeight * k;
     cv.hidden = false; drop.hidden = true;
     document.getElementById('scrub').hidden = false;
-    Loader.at(1, 22, `${video.videoWidth} by ${video.videoHeight}, ${video.duration.toFixed(1)} seconds`);
+    const secs = isFinite(video.duration) ? `, ${video.duration.toFixed(1)} seconds` : '';
+    Loader.at(1, 22, `${video.videoWidth} by ${video.videoHeight}${secs}`);
     const t = await bestFrameTime();
     Loader.at(3, 92, `Sharpest frame at ${t.toFixed(1)} s`);
     await breathe();
     grabFrame(t);
     document.getElementById('frame').value =
-      Math.round((t / Math.max(video.duration, 0.001)) * 1000);
+      Math.round((t / Math.max(video.duration || 1, 0.001)) * 1000);
   };
 
 /**
