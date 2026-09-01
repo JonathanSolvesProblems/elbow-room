@@ -21,6 +21,9 @@ export const app = {
   current: CATALOGUE[0],
   dims: null,
   doorRemoved: false,
+  // What the last Show me where it jams found, shown on the 3D label until
+  // anything moves the object again.
+  pinchNote: null,
   subscribers: [],
 
   onChange(fn) { this.subscribers.push(fn); },
@@ -78,6 +81,7 @@ export const app = {
   },
 
   place({ x, y, angle }) {
+    this.pinchNote = null;
     view.update({
       pos: { x: x ?? view.state.pos.x, y: y ?? view.state.pos.y },
       angle: angle ?? view.state.angle
@@ -85,7 +89,23 @@ export const app = {
     this.emit();
   },
 
-  showPinch() { const r = view.showPinch(); this.emit(); return r; },
+  /**
+   * Park the object at the worst point on the route.
+   *
+   * For something that does not fit that point is where it jams. For something
+   * that does fit it is still the tightest place it will ever be, which is the
+   * more reassuring answer and the one the button used to hide by calling it a
+   * jam and then showing a clear spot.
+   */
+  showPinch() {
+    const r = view.showPinch();
+    const slack = r.maxLength - this.dims.length;
+    this.pinchNote = r.goes
+      ? `tightest point, ${ft(slack)} to spare`
+      : `jams here, short by ${ft(-slack)}`;
+    this.emit();
+    return r;
+  },
 
   setStairMeasurement(field, inches, note) {
     const target = field.startsWith('turn.')
@@ -111,6 +131,7 @@ export const app = {
 
   /** Push dimensions into the canvas, redraw, and tell everyone. */
   sync() {
+    this.pinchNote = null;
     // Draw what the solver says is actually presented to the floor, not the raw
     // dimensions. These are the same numbers the verdict is computed from, so
     // the picture and the text can never disagree.
@@ -185,6 +206,11 @@ export function boot() {
     const r = app.verdict();
     const el = document.getElementById('verdict');
     el.className = 'verdict ' + (r.verdict === 'goes' ? 'yes' : 'no');
+    // The button promised a jam and then parked a water heater that fits in a
+    // clear spot. Say which of the two things it is about to show.
+    document.getElementById('pinch').textContent =
+      r.verdict === 'goes' ? 'Show me the tightest point' : 'Show me where it jams';
+
     el.innerHTML = '<b>' + (r.verdict === 'goes' ? 'It goes' : 'It does not go') + '</b>' +
       r.reasons.map(x => `<p>${x.pass ? '' : '<strong>'}${x.stage}. ${x.detail}${x.pass ? '' : '</strong>'}</p>`).join('') +
       r.advice.map(a => `<p>&rarr; ${a}</p>`).join('');
@@ -205,6 +231,7 @@ export function boot() {
       // where it is parked. Green while the sidebar says it does not go was the
       // picture contradicting the words again.
       blocked: r.verdict !== 'goes',
+      note: app.pinchNote,
       pos: { ...view.state.pos }, yaw: view.state.angle
     });
     // One clearance test drives both drawings.

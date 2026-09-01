@@ -283,8 +283,9 @@ export function registerTools(app) {
   reg({
     name: 'show_pinch',
     description:
-      'Move the object to the exact point in the turn where it jams, and leave it there. Use this ' +
-      'instead of describing the problem: the person can see the collision on the canvas.',
+      'Move the object to the tightest point of the turn and leave it there. For something that ' +
+      'does not fit, that is where it jams. For something that does, it is the worst place on the ' +
+      'route and shows how little room is left. Use this instead of describing it.',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
       const r = app.showPinch();

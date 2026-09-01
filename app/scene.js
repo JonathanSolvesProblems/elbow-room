@@ -25,7 +25,7 @@ let M = {
   a: 41.5, b: 41.5, headroom: 80,
   rise: 7.5, going: 9.5, treads: 9, winders: 3,
   object: { length: 91, width: 36, height: 48, shape: 'sofa' },
-  tilt: 0, upright: false, blocked: true, touching: false,
+  tilt: 0, upright: false, blocked: true, touching: false, note: null,
   pos: { x: 100, y: 20 }, yaw: 0
 };
 
@@ -188,6 +188,7 @@ function bindDrag(canvas) {
     if (!ray.ray.intersectPlane(plane, hit)) return;
     const p = hit.add(grabOffset);
     M.pos = clampToShaft(p.x / IN, p.z / IN);
+    M.note = null;
     placeObject();
     if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
   });
@@ -255,6 +256,7 @@ function bindKeys(canvas) {
   canvas.tabIndex = 0;
   const nudge = (dx, dy) => {
     M.pos = clampToShaft(M.pos.x + dx, M.pos.y + dy);
+    M.note = null;
     placeObject();
     if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
   };
@@ -543,7 +545,7 @@ function placeObject() {
     new THREE.LineBasicMaterial({ color: colour })
   ));
 
-  objectMesh.add(dimensionLabel(L, W, H, !M.touching));
+  objectMesh.add(dimensionLabel(L, W, H, !M.touching, M.note));
 
   const tilt = (M.upright ? 90 : M.tilt) * Math.PI / 180;
   if (shape === 'cylinder') {
@@ -561,8 +563,16 @@ function placeObject() {
   scene.add(objectMesh);
 }
 
-/** A little sprite carrying the object's real size and how it is doing. */
-function dimensionLabel(L, W, H, clear) {
+/**
+ * A little sprite carrying the object's real size and how it is doing.
+ *
+ * `note` overrides the touching line when the app has something better to say
+ * about why the object is standing exactly here. Parking a water heater that
+ * fits at the tightest point of the turn and labelling it "clear where it is"
+ * is true and useless: what you want to know is that this is the worst spot on
+ * the route and it still has room.
+ */
+function dimensionLabel(L, W, H, clear, note) {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 176;
   const g = c.getContext('2d');
@@ -577,7 +587,7 @@ function dimensionLabel(L, W, H, clear) {
   // touching anything right here".
   g.fillStyle = clear ? '#7fe3ae' : '#ffb199';
   g.font = '30px ui-sans-serif, system-ui, sans-serif';
-  g.fillText(clear ? 'clear where it is' : 'touching here', 256, 124);
+  g.fillText(note || (clear ? 'clear where it is' : 'touching here'), 256, 124);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
