@@ -99,7 +99,11 @@ export const app = {
    */
   showPinch() {
     const r = view.showPinch();
-    const slack = r.maxLength - this.dims.length;
+    // Against the length actually presented to the corner, not the raw longest
+    // dimension. A water heater tilted on its side shows 2 feet to the turn,
+    // not 5, and measuring the slack against 5 put "9 and a half inches to
+    // spare" on the 3D label beside "3 foot 9 and a half" in the sidebar.
+    const slack = r.maxLength - view.state.object.length;
     this.pinchNote = r.goes
       ? `tightest point, ${ft(slack)} to spare`
       : `jams here, short by ${ft(-slack)}`;
