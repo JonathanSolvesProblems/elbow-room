@@ -125,8 +125,7 @@ const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;'
 
 /** Render the verdict as the structured thing it is, not a paragraph. */
 function show2(text) {
-  const lines = text.split('
-').map(l => l.trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const head = lines.shift() || '';
   const bad = /does not go/i.test(head);
   const rows = lines.map(l => {
