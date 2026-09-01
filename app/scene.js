@@ -521,7 +521,17 @@ function build() {
 
 function placeObject() {
   if (!scene) return;
-  if (objectMesh) { scene.remove(objectMesh); objectMesh.geometry.dispose(); }
+  // This runs on every pointermove of a drag, so everything it made last time
+  // has to go: the edge lines, the label's texture and the sofa parts as well
+  // as the box itself. Disposing only objectMesh.geometry leaked the rest.
+  if (objectMesh) {
+    scene.remove(objectMesh);
+    objectMesh.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
+    });
+  }
 
   const { length: L, width: W, height: H, shape } = M.object;
   // Red where the pose actually collides in three dimensions, green where it
@@ -530,8 +540,10 @@ function placeObject() {
   M.touching = !poseIsClear();
   const colour = M.touching ? 0xe0603f : 0x3fb27f;
   const mat = new THREE.MeshStandardMaterial({
-    color: colour, transparent: true, opacity: .55, roughness: .5,
-    emissive: colour, emissiveIntensity: .12
+    // A sofa gets drawn properly below, so its bounding box drops back to a
+    // faint shell. Everything else is the box.
+    color: colour, transparent: true, opacity: shape === 'sofa' ? .16 : .55,
+    roughness: .5, emissive: colour, emissiveIntensity: .12
   });
 
   const geo = shape === 'cylinder'
@@ -544,6 +556,7 @@ function placeObject() {
     new THREE.EdgesGeometry(geo),
     new THREE.LineBasicMaterial({ color: colour })
   ));
+  if (shape === 'sofa') objectMesh.add(sofaParts(L, W, H, colour));
 
   objectMesh.add(dimensionLabel(L, W, H, !M.touching, M.note));
 
@@ -561,6 +574,40 @@ function placeObject() {
   const halfV = (Math.abs(L * Math.sin(tilt)) + Math.abs(H * Math.cos(tilt))) / 2 * IN;
   objectMesh.position.set(M.pos.x * IN, floorH + halfV + 0.02, M.pos.y * IN);
   scene.add(objectMesh);
+}
+
+/**
+ * A seat, a back and two arms, inside the bounding box.
+ *
+ * The plan view has drawn sofas with arms since the beginning and the 3D view
+ * drew a slab, so the same couch was two different objects depending on which
+ * tab you were on. These parts are decoration only: every clearance test still
+ * runs against the full bounding box, which is the conservative answer and the
+ * one a mover cares about, and the faint shell around them shows exactly that
+ * volume.
+ *
+ * Local axes here are x along the length, y up, z across the depth.
+ */
+function sofaParts(L, W, H, colour) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: colour, transparent: true, opacity: .72, roughness: .65,
+    emissive: colour, emissiveIntensity: .1
+  });
+  const part = (w, h, d, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w * IN, h * IN, d * IN), mat);
+    m.position.set(x * IN, y * IN, z * IN);
+    m.castShadow = true;
+    g.add(m);
+    return m;
+  };
+  const armW = Math.min(L * 0.09, 8);
+  const backD = Math.min(W * 0.3, 9);
+  part(L, H * 0.44, W, 0, -H / 2 + H * 0.22, 0);                       // seat
+  part(L, H, backD, 0, 0, -W / 2 + backD / 2);                         // back
+  part(armW, H * 0.72, W, -L / 2 + armW / 2, -H / 2 + H * 0.36, 0);    // near arm
+  part(armW, H * 0.72, W, L / 2 - armW / 2, -H / 2 + H * 0.36, 0);     // far arm
+  return g;
 }
 
 /**
