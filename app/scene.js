@@ -29,10 +29,11 @@ let M = {
 };
 
 const tex = new THREE.TextureLoader();
-function photo(url) {
+function photo(url, repeat = 1) {
   const t = tex.load(url);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
   return t;
 }
 
@@ -98,10 +99,12 @@ function build() {
   const straight = Math.max(1, treads - winders);
   const A = a * IN, B = b * IN, R = rise * IN, G = going * IN;
 
-  const woodTop = new THREE.MeshStandardMaterial({ map: photo('/docs/tex-tread.jpg'), roughness: .85 });
+  const woodTop = new THREE.MeshStandardMaterial({ map: photo('/docs/tex-tread.jpg', 1), roughness: .85 });
   const woodSide = new THREE.MeshStandardMaterial({ color: 0xd9cdb8, roughness: .9 });
-  const wallMat = new THREE.MeshStandardMaterial({ map: photo('/docs/tex-wall.jpg'), roughness: 1,
-                                                   side: THREE.DoubleSide });
+  // BackSide only: seen from outside the shaft the walls vanish, so you can
+  // look in. Standing inside, they are there.
+  const wallMat = new THREE.MeshStandardMaterial({ map: photo('/docs/tex-wall.jpg', 4), roughness: 1,
+                                                   side: THREE.BackSide });
 
   const tread = (w, d, h, x, y, z) => {
     const g = new THREE.BoxGeometry(w, R, d);
@@ -231,10 +234,13 @@ function floorAtInches(x, y) {
 /** Point the camera at the whole shaft, from the angle that reads best. */
 export function frameAll() {
   if (!shaftGroup || !camera) return;
-  const box = new THREE.Box3().setFromObject(shaftGroup);
-  const c = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3()).length();
-  camera.position.set(c.x + size * 0.55, c.y + size * 0.42, c.z + size * 0.62);
-  controls.target.copy(c);
+  // Look at the turn from outside and above. Framing on the whole group puts
+  // the camera inside two tall walls, which is what it was doing.
+  const straight = Math.max(1, M.treads - M.winders);
+  const reach = (Math.max(M.a, M.b) + straight * M.going) * IN;
+  const t = new THREE.Vector3(M.b * IN * 0.5, straight * M.rise * IN * 0.7, M.a * IN * 0.5);
+  const d = reach * 1.55;
+  camera.position.set(t.x + d * 0.85, t.y + d * 0.72, t.z + d * 0.95);
+  controls.target.copy(t);
   controls.update();
 }
