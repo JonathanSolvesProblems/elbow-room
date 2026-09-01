@@ -115,10 +115,23 @@ function show(kind, title, body) {
  * braces on screen.
  */
 function readReply(out) {
+  // Unwrap until there is nothing left to unwrap. The reply has arrived as a
+  // JSON string, and a JSON string containing a JSON string, depending on how
+  // it crossed the boundary, so peel rather than assume a shape.
   let v = out;
-  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { return v; } }
-  const t = v?.content?.[0]?.text;
-  return typeof t === 'string' ? t : String(out);
+  for (let i = 0; i < 4; i++) {
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (!(s.startsWith('{') || s.startsWith('['))) return v;
+      try { v = JSON.parse(s); } catch { return v; }
+      continue;
+    }
+    const t = Array.isArray(v?.content) ? v.content.map(c => c?.text ?? '').join('\n')
+            : v?.text ?? v?.result ?? null;
+    if (typeof t === 'string') { v = t; continue; }
+    break;
+  }
+  return typeof v === 'string' ? v : JSON.stringify(v);
 }
 
 const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
@@ -170,11 +183,7 @@ if (!mc) {
       const out = await mc.executeTool(found, JSON.stringify({
         length_in: 91, depth_in: 36, height_in: 48
       }));
-      const text = (out?.content?.[0]?.text) ?? String(out);
-      const bad = /does not go/i.test(text);
-      show(bad ? 'no' : 'yes',
-           bad ? 'It will not get up your stairs' : 'It will get up your stairs',
-           text.replace(/\n/g, '<br>'));
+      show2(readReply(out));
     } catch (e) {
       show('no', 'The call failed', String(e && e.message ? e.message : e));
     }
