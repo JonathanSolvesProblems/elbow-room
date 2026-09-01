@@ -37,6 +37,18 @@ function photo(url, repeat = 1) {
   return t;
 }
 
+let mode = 'orbit';
+/**
+ * 'orbit' or 'move'. Orbiting and carrying were competing for the same pointer
+ * gesture, so a drag near the couch picked it up when you meant to look around.
+ */
+export function setMode(m) {
+  mode = m === 'move' ? 'move' : 'orbit';
+  if (controls) controls.enabled = mode === 'orbit';
+  if (renderer) renderer.domElement.style.cursor = mode === 'move' ? 'grab' : 'default';
+  return mode;
+}
+
 let onMove = null;
 /** Tell the rest of the app when someone drags the object in 3D. */
 export function onObjectMove(fn) { onMove = fn; }
@@ -145,12 +157,11 @@ function bindDrag(canvas) {
   };
 
   canvas.addEventListener('pointerdown', e => {
-    if (!objectMesh) return;
+    if (!objectMesh || mode !== 'move') return;
     toNdc(e);
     ray.setFromCamera(ndc, camera);
     if (!ray.intersectObject(objectMesh, true).length) return;
     dragging = true;
-    controls.enabled = false;
     canvas.setPointerCapture(e.pointerId);
     plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), objectMesh.position);
     if (ray.ray.intersectPlane(plane, hit)) grabOffset.copy(objectMesh.position).sub(hit);
@@ -169,7 +180,7 @@ function bindDrag(canvas) {
 
   const stop = e => {
     if (!dragging) return;
-    dragging = false; controls.enabled = true;
+    dragging = false;
     try { canvas.releasePointerCapture(e.pointerId); } catch {}
   };
   canvas.addEventListener('pointerup', stop);
@@ -257,7 +268,10 @@ function build() {
     sh.moveTo(B, A);
     sh.lineTo(p0[0], p0[1]);
     // Follow the corner so the fan meets both walls squarely.
-    if (p0[0] > 1e-6 && p1[1] > 1e-6 && Math.abs(p0[1]) < 1e-6 && Math.abs(p1[0]) < 1e-6) sh.lineTo(0, 0);
+    // When a wedge's two rays land on different walls it has to travel round
+    // the outer corner. This test was inverted, so the middle wedge cut the
+    // corner off and left a triangular hole between the two flights.
+    if (Math.abs(p0[0]) < 1e-4 && Math.abs(p1[1]) < 1e-4) sh.lineTo(0, 0);
     sh.lineTo(p1[0], p1[1]);
     sh.closePath();
     const g = new THREE.ExtrudeGeometry(sh, { depth: h + R, bevelEnabled: false });
@@ -277,22 +291,24 @@ function build() {
   const ext = Math.max(A, B) + straight * G;
   const top = h + headroom * IN;
 
-  // Floor slab at the bottom of the flight.
+  // The shaft footprint. The L runs from the outer corner at the origin out
+  // along both arms, so floor and walls are sized to exactly that. Padding the
+  // box out on every side is what left the walls standing off from the stairs
+  // instead of meeting their sides.
+  const spanX = B + straight * G, spanY = A + straight * G;
+
   const slab = new THREE.Mesh(
-    new THREE.BoxGeometry(ext + B + .6, .06, ext + A + .6),
+    new THREE.BoxGeometry(spanX, .06, spanY),
     new THREE.MeshStandardMaterial({ color: 0x6d6055, roughness: .95 })
   );
-  slab.position.set((ext + B) / 2 - B, -.03, (ext + A) / 2 - A);
+  slab.position.set(spanX / 2, -.03, spanY / 2);
   slab.receiveShadow = true;
   shaftGroup.add(slab);
 
   // The room, as an inside-out box. Back faces only, so from outside you see
   // straight in and from within you are surrounded.
-  const room = new THREE.Mesh(
-    new THREE.BoxGeometry(ext + B + .6, top + .4, ext + A + .6),
-    wallMat
-  );
-  room.position.set((ext + B) / 2 - B, (top + .4) / 2 - .05, (ext + A) / 2 - A);
+  const room = new THREE.Mesh(new THREE.BoxGeometry(spanX, top, spanY), wallMat);
+  room.position.set(spanX / 2, top / 2 - .03, spanY / 2);
   room.receiveShadow = true;
   shaftGroup.add(room);
 

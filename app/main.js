@@ -161,6 +161,7 @@ export function boot() {
   solid.attach(document.getElementById('solid'));
   // Dragging in 3D moves the same couch the plan view is drawing.
   solid.onObjectMove(p => { view.update({ pos: { x: p.x, y: p.y } }); });
+  window.addEventListener('elbowroom:mode', e => solid.setMode(e.detail));
 
   const pick = document.getElementById('pick');
   for (const item of CATALOGUE) {
