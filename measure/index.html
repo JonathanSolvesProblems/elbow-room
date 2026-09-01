@@ -80,6 +80,8 @@
   .loading { position:fixed; inset:0; z-index:60; display:none; place-items:center;
              background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(3px); }
   .loading.on { display:grid; }
+  .loading.failed .card { border-color:var(--pinch); }
+  .loading.failed .stage { color:var(--fg); }
   .loading .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
                    padding:1.6rem 1.8rem; min-width:22rem; max-width:28rem;
                    box-shadow:0 20px 60px rgb(0 0 0 / .25); }
@@ -113,6 +115,10 @@
     <p class="stage" id="loadStage">Nothing has left your browser.</p>
     <div class="bar"><i id="loadBar"></i></div>
     <ul class="steps2" id="loadSteps"></ul>
+    <div id="loadActions" hidden style="margin-top:1rem">
+      <button id="loadPick">Choose another file</button>
+      <button id="loadClose">Close</button>
+    </div>
   </div>
 </div>
 
@@ -232,6 +238,8 @@ const Loader = {
     // Nothing here is allowed to hang. If a stage stalls, say so and get out of
     // the way rather than leaving a progress bar sitting there forever.
     clearTimeout(this._guard);
+    this.clear();
+    document.getElementById('loadBar').style.background = '';
     this._guard = setTimeout(() => {
       if (this.el.classList.contains('on')) {
         this.fail('That is taking longer than expected. The frame is on screen, carry on with it.');
@@ -254,11 +262,37 @@ const Loader = {
     });
   },
   done() { clearTimeout(this._guard); this.at(this.steps.length, 100);
-           setTimeout(() => this.el.classList.remove('on'), 420); },
+           setTimeout(() => this.clear(), 420); },
+  /**
+   * Stop, and stay stopped until the person says otherwise.
+   *
+   * This used to wipe itself after 2.2 seconds. The messages it carries are
+   * instructions, several sentences long, telling someone to change a camera
+   * setting: nobody reads that in two seconds, and what they are left with is a
+   * drop zone that looks exactly as it did before, which reads as a crash
+   * rather than as an answer. So it stays, it says what to do next, and it
+   * closes when it is dismissed.
+   */
   fail(msg) {
     clearTimeout(this._guard);
+    document.getElementById('loadTitle').textContent = 'That file will not open here';
     document.getElementById('loadStage').textContent = msg;
-    setTimeout(() => this.el.classList.remove('on'), 2200);
+    document.getElementById('loadBar').style.width = '100%';
+    document.getElementById('loadBar').style.background = 'var(--pinch)';
+    document.getElementById('loadSteps').innerHTML = '';
+    document.getElementById('loadActions').hidden = false;
+    this.el.classList.add('on', 'failed');
+    // Leave it behind in the sidebar too, so the reason survives the dismissal.
+    const a = document.getElementById('advice');
+    a.hidden = false;
+    a.className = 'advice warn';
+    a.innerHTML = '<b>The last file could not be opened</b>' +
+      '<span style="color:var(--mut)">' + msg.replace(/</g, '&lt;') + '</span>';
+  },
+  clear() {
+    this.el.classList.remove('on', 'failed');
+    document.getElementById('loadActions').hidden = true;
+    document.getElementById('loadBar').style.background = '';
   }
 };
 /**
@@ -352,9 +386,15 @@ document.getElementById('example').onclick = e => {
   };
   img.src = '/docs/stairs-width.jpg';
 };
+document.getElementById('loadClose').onclick = () => Loader.clear();
+document.getElementById('loadPick').onclick = () => { Loader.clear(); file.click(); };
 drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; };
 drop.ondragleave = () => drop.style.borderColor = '';
-drop.ondrop = e => { e.preventDefault(); intake([...e.dataTransfer.files]); };
+drop.ondrop = e => {
+  e.preventDefault();
+  drop.style.borderColor = '';   // it used to stay lit long after the drop
+  intake([...e.dataTransfer.files]);
+};
 file.onchange = () => intake([...file.files]);
 
 /**
