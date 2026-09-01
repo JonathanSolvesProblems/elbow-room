@@ -73,6 +73,14 @@
          border:1px solid var(--fg); border-radius:10px; background:var(--card);
          padding:1rem; box-shadow:0 10px 34px rgb(0 0 0 / .2); }
   .ask p { margin:0 0 .8rem; }
+
+  /* Embedded in another origin: show the drawing, drop the chrome. The host
+     page has its own UI and does not need ours competing with it. */
+  body.embedded { overflow:hidden; }
+  body.embedded aside { display:none; }
+  body.embedded .wrap { grid-template-columns:1fr; }
+  body.embedded .section { width:min(20rem,42%); height:9rem; }
+  body.embedded canvas { min-height:0; height:100vh; }
 </style>
 </head>
 <body>
@@ -125,6 +133,7 @@
 
 <script type="module">
 import { boot } from './app/main.js';
+if (new URLSearchParams(location.search).has('embedded')) document.body.classList.add('embedded');
 boot();
 </script>
 </body>

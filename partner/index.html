@@ -32,9 +32,20 @@
   .verdict.show { display:block; }
   .verdict.yes { border-color:var(--ok); background:color-mix(in srgb, var(--ok) 12%, transparent); }
   .verdict.no  { border-color:var(--no); background:color-mix(in srgb, var(--no) 12%, transparent); }
-  .verdict b { display:block; margin-bottom:.25rem; }
+  .verdict b { display:block; margin-bottom:.5rem; font-size:14.5px; }
+  .verdict .step { margin:.45rem 0; padding-left:4.6rem; position:relative; font-size:12.5px; line-height:1.45; }
+  .verdict .step span { position:absolute; left:0; top:0; width:4.1rem; font-size:10.5px;
+                        text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+  .verdict .step.bad span { color:var(--no); }
+  .verdict .step.good span { color:var(--ok); }
+  .verdict .tip { margin:.55rem 0 0; padding-top:.5rem; border-top:1px solid var(--line);
+                  font-size:12px; color:var(--mut); }
   .note { font-size:12px; color:var(--mut); margin-top:.7rem; }
-  iframe { width:100%; height:22rem; border:1px solid var(--line); border-radius:10px; margin-top:1.5rem; }
+  .frame { margin-top:1.6rem; border:1px solid var(--line); border-radius:11px; overflow:hidden; background:var(--card); }
+  .frame-bar { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut);
+               padding:.5rem .8rem; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
+  .frame-bar code { font-size:10.5px; }
+  iframe { width:100%; height:26rem; border:0; display:block; }
   code { font-size:11.5px; }
   .banner { border:1px solid var(--no); border-radius:9px; padding:.7rem .85rem; font-size:12.5px;
             color:var(--no); margin-top:.8rem; display:none; }
@@ -62,7 +73,10 @@
     <div class="spec"><span>Height</span><span>48 in</span></div>
     <div class="spec"><span>Frame</span><span>kiln-dried hardwood, not knock-down</span></div>
 
-    <iframe id="planner" allow="tools" title="Your staircase"></iframe>
+    <div class="frame">
+      <div class="frame-bar"><span>Your staircase</span><code id="frameOrigin"></code></div>
+      <iframe id="planner" allow="tools" title="Your staircase" scrolling="no"></iframe>
+    </div>
     <p class="note">Your staircase, embedded from a different origin. This page cannot see inside it and
       has no account with it. It can only call the one tool that origin chose to expose.</p>
   </div>
@@ -84,6 +98,7 @@
 <script>
 const PLANNER_ORIGIN = 'https://elbow-room-sand.vercel.app';
 document.getElementById('planner').src = PLANNER_ORIGIN + '/?embedded=1';
+document.getElementById('frameOrigin').textContent = new URL(PLANNER_ORIGIN).host;
 
 const askBtn  = document.getElementById('ask');
 const verdict = document.getElementById('verdict');
@@ -92,6 +107,38 @@ const wiring  = document.getElementById('wiring');
 function show(kind, title, body) {
   verdict.className = 'verdict show ' + kind;
   verdict.innerHTML = '<b>' + title + '</b>' + body;
+}
+
+/**
+ * executeTool hands back a JSON *string*, not an object, so the content array
+ * has to be parsed out of it. Rendering the raw return put escaped quotes and
+ * braces on screen.
+ */
+function readReply(out) {
+  let v = out;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { return v; } }
+  const t = v?.content?.[0]?.text;
+  return typeof t === 'string' ? t : String(out);
+}
+
+const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
+
+/** Render the verdict as the structured thing it is, not a paragraph. */
+function show2(text) {
+  const lines = text.split('
+').map(l => l.trim()).filter(Boolean);
+  const head = lines.shift() || '';
+  const bad = /does not go/i.test(head);
+  const rows = lines.map(l => {
+    const fail = /^FAILS/.test(l);
+    const tip  = /^Worth trying/i.test(l);
+    const body = esc(l.replace(/^(FAILS|OK) at the /, '').replace(/^Worth trying: /, ''));
+    if (tip) return '<p class="tip">' + body + '</p>';
+    return '<p class="step ' + (fail ? 'bad' : 'good') + '">' +
+           '<span>' + (fail ? 'blocked' : 'clears') + '</span>' + body + '</p>';
+  }).join('');
+  verdict.className = 'verdict show ' + (bad ? 'no' : 'yes');
+  verdict.innerHTML = '<b>' + (bad ? 'It will not get up your stairs' : 'It will get up your stairs') + '</b>' + rows;
 }
 
 const mc = document.modelContext;
