@@ -11,7 +11,7 @@ import { STAIRCASE, CATALOGUE, plain, plainObject, provisionalFields, SOURCE } f
 import { checkPath, cornerMaxLength } from './geometry.js';
 import { ft } from './units.js';
 import * as view from './view.js';
-import * as iso from './iso.js';
+import * as solid from './scene.js';
 import { registerTools } from './tools.js';
 
 export const app = {
@@ -158,7 +158,7 @@ export function boot() {
   view.state.a = STAIRCASE.turn.widthA.value;
   view.state.b = STAIRCASE.turn.widthB.value;
   view.attach(document.getElementById('cv'));
-  iso.attach(document.getElementById('iso'));
+  solid.attach(document.getElementById('solid'));
 
   const pick = document.getElementById('pick');
   for (const item of CATALOGUE) {
@@ -190,7 +190,7 @@ export function boot() {
     // climbing, and that a water heater goes up standing on end. Every number
     // it draws comes from the same verdict, so the two views cannot disagree.
     const st = app.stairModel;
-    iso.set({
+    solid.set({
       a: st.turn.widthA.value, b: st.turn.widthB.value,
       headroom: st.turn.headroom.value,
       rise: st.run.rise.value, going: st.run.going.value,
