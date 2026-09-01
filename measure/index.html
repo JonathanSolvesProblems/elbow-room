@@ -67,6 +67,22 @@
   ul.marks li { display:flex; justify-content:space-between; padding:.3rem 0; border-top:1px solid var(--line); }
   ul.marks li span:last-child { font-family:ui-monospace,monospace; }
   .note { font-size:12px; color:var(--mut); margin-top:.8rem; }
+  .loading { position:fixed; inset:0; z-index:60; display:none; place-items:center;
+             background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(3px); }
+  .loading.on { display:grid; }
+  .loading .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+                   padding:1.6rem 1.8rem; min-width:22rem; max-width:28rem;
+                   box-shadow:0 20px 60px rgb(0 0 0 / .25); }
+  .loading h3 { margin:0 0 .2rem; font-size:1rem; letter-spacing:-.01em; }
+  .loading .stage { color:var(--mut); font-size:13px; margin:0 0 .9rem; min-height:1.2em; }
+  .bar { height:5px; border-radius:3px; background:var(--line); overflow:hidden; }
+  .bar i { display:block; height:100%; width:0%; background:var(--accent);
+           transition:width .28s cubic-bezier(.4,0,.2,1); }
+  .steps2 { list-style:none; margin:.9rem 0 0; padding:0; font-size:12.5px; }
+  .steps2 li { display:flex; gap:.5rem; padding:.16rem 0; color:var(--mut); }
+  .steps2 li b { width:1.1rem; text-align:center; font-weight:600; }
+  .steps2 li.done { color:var(--fg); }
+  .steps2 li.now  { color:var(--fg); font-weight:600; }
   .banner { border:1px solid var(--pinch); border-radius:9px; padding:.7rem .85rem;
             font-size:12.5px; margin-bottom:1rem; }
   body[data-webmcp="present"] .banner { display:none; }
@@ -81,6 +97,15 @@
   <a href="/probe/" data-k="probe">Probe</a>
   <a href="https://github.com/JonathanSolvesProblems/elbow-room" data-k="repo">Code</a>
 </nav>
+<div class="loading" id="loading" role="status" aria-live="polite">
+  <div class="card">
+    <h3 id="loadTitle">Reading your file</h3>
+    <p class="stage" id="loadStage">Nothing has left your browser.</p>
+    <div class="bar"><i id="loadBar"></i></div>
+    <ul class="steps2" id="loadSteps"></ul>
+  </div>
+</div>
+
 <div class="wrap">
   <div class="stage">
     <div id="scrub" hidden style="width:100%;max-width:60rem;margin-bottom:.6rem">
@@ -177,6 +202,42 @@ import { looksEquirectangular, heightSensitivity } from '../app/pano.js';
 import { ft } from '../app/units.js';
 
 const S = createSession();
+
+/**
+ * Say what is happening and how far along it is.
+ *
+ * Scoring a dozen frames of a 50 MB clip takes real seconds, and an app that
+ * sits there silently reads as broken. Every stage is named, because the one
+ * thing worth reassuring people about here is that the file is being read in
+ * their own browser and is not going anywhere.
+ */
+const Loader = {
+  el: document.getElementById('loading'),
+  steps: [],
+  show(title, steps) {
+    this.steps = steps;
+    document.getElementById('loadTitle').textContent = title;
+    document.getElementById('loadSteps').innerHTML =
+      steps.map((t, i) => `<li data-i="${i}"><b>&middot;</b><span>${t}</span></li>`).join('');
+    this.el.classList.add('on');
+    this.at(0, 0);
+  },
+  at(i, pct, note) {
+    document.getElementById('loadBar').style.width = Math.round(pct) + '%';
+    if (note) document.getElementById('loadStage').textContent = note;
+    [...document.querySelectorAll('#loadSteps li')].forEach(li => {
+      const n = +li.dataset.i;
+      li.className = n < i ? 'done' : n === i ? 'now' : '';
+      li.querySelector('b').textContent = n < i ? '\u2713' : n === i ? '\u203A' : '\u00B7';
+    });
+  },
+  done() { this.at(this.steps.length, 100); setTimeout(() => this.el.classList.remove('on'), 420); },
+  fail(msg) {
+    document.getElementById('loadStage').textContent = msg;
+    setTimeout(() => this.el.classList.remove('on'), 2200);
+  }
+};
+const breathe = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 const drop = document.getElementById('drop');
@@ -210,17 +271,21 @@ file.onchange = () => file.files[0] && load(file.files[0]);
 
 function load(f) {
   if (f.type.startsWith('video/')) return loadVideo(f);
+  Loader.show('Reading your photo', ['Reading the file', 'Checking the shape', 'Ready to calibrate']);
+  Loader.at(0, 15, 'Reading it here in your browser. Nothing is uploaded.');
   const fr = new FileReader();
   fr.onload = () => {
     const img = new Image();
     img.onload = () => {
-      if (looksEquirectangular(img.width, img.height)) return startPano(img);
+      Loader.at(1, 65, `${img.width} by ${img.height}`);
+      if (looksEquirectangular(img.width, img.height)) { Loader.done(); return startPano(img); }
       S.image = img;
       const max = 1100;
       const k = Math.min(1, max / Math.max(img.width, img.height));
       cv.width = img.width * k; cv.height = img.height * k;
       cv.hidden = false; drop.hidden = true;
       draw(); steps();
+      Loader.done();
     };
     img.src = fr.result;
   };
@@ -234,6 +299,14 @@ function load(f) {
  */
 let video = null;
 function loadVideo(f) {
+  Loader.show('Reading your video', [
+    'Decoding the clip',
+    'Sampling frames across it',
+    'Scoring each one for sharpness',
+    'Picking the clearest',
+    'Ready to calibrate'
+  ]);
+  Loader.at(0, 8, 'Decoding in your browser. Nothing is uploaded.');
   video = document.createElement('video');
   video.preload = 'auto';
   video.muted = true;
@@ -244,7 +317,10 @@ function loadVideo(f) {
     cv.width = video.videoWidth * k; cv.height = video.videoHeight * k;
     cv.hidden = false; drop.hidden = true;
     document.getElementById('scrub').hidden = false;
+    Loader.at(1, 22, `${video.videoWidth} by ${video.videoHeight}, ${video.duration.toFixed(1)} seconds`);
     const t = await bestFrameTime();
+    Loader.at(3, 92, `Sharpest frame at ${t.toFixed(1)} s`);
+    await breathe();
     grabFrame(t);
     document.getElementById('frame').value =
       Math.round((t / Math.max(video.duration, 0.001)) * 1000);
@@ -267,6 +343,8 @@ async function bestFrameTime(samples = 12) {
 
   for (let i = 0; i < samples; i++) {
     const t = (i + 0.5) / samples * video.duration;
+    Loader.at(2, 25 + (i / samples) * 62, `Frame ${i + 1} of ${samples}, at ${t.toFixed(1)} s`);
+    await breathe();
     await seekTo(t);
     g.drawImage(video, 0, 0, probe.width, probe.height);
     const d = g.getImageData(0, 0, probe.width, probe.height).data;
@@ -306,8 +384,9 @@ function grabFrame(t) {
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
     const img = new Image();
     img.onload = () => {
-      if (looksEquirectangular(img.width, img.height)) return startPano(img);
+      if (looksEquirectangular(img.width, img.height)) { Loader.done(); return startPano(img); }
       S.image = img; S.reset(); draw(); steps();
+      Loader.done();
     };
     img.src = c.toDataURL('image/jpeg', 0.92);
     document.getElementById('frametime').textContent =
