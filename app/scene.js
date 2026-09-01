@@ -322,8 +322,13 @@ function build() {
   // look in. Standing inside, they are there.
   // Plaster, tiled small and tinted down so it reads as a surface rather than
   // as a photograph. A crop with stairs in it tiled into wallpaper of stairs.
+  // Tinted up, and given a floor of its own light. These are BackSide faces, so
+  // from an orbiting camera you are always looking at the far wall's inside,
+  // away from the key light. At the old tint that surface read as a black void
+  // rather than as the room behind the stairs.
   const wallMat = new THREE.MeshStandardMaterial({
-    map: photo('/docs/tex-wall.jpg', 7), color: 0x9c9184, roughness: 1, side: THREE.BackSide
+    map: photo('/docs/tex-wall.jpg', 5), color: 0xd4cbbc, roughness: 1,
+    emissive: 0x2b2721, emissiveIntensity: 1, side: THREE.BackSide
   });
 
   // A real step is a tread slab, a riser behind it, and a stringer carrying
@@ -433,12 +438,20 @@ function build() {
     h += R;
   }
 
-  // Where the walls stop: headroom above the top landing, which `h` now holds
-  // after both flights and the winders. This was undeclared, so it resolved to
-  // window.top, every arithmetic on it came out NaN, and the two meshes built
-  // from it (the room shell and the bulkhead) were silently dropped by three.
-  // That is why the soffit read as a red plate floating on a stick.
-  const top = h + headroom * IN;
+  // Where the walls stop.
+  //
+  // This was undeclared, so it resolved to window.top, every arithmetic on it
+  // came out NaN, and the two meshes built from it (the room shell and the
+  // bulkhead) were silently dropped by three. That is why the soffit read as a
+  // red plate floating on a stick.
+  //
+  // The real shaft runs to the upper floor's ceiling, which is about sixteen
+  // feet from the basement slab and frames as a tower with the staircase lost
+  // at the bottom of it. Cut it off a foot above the soffit instead: that is
+  // the surface the whole app reasons about, and stopping there leaves the
+  // turn, the bulkhead and both flights visible in one view.
+  const soffitH = straight * R + headroom * IN;
+  const top = soffitH + 12 * IN;
 
   // The shaft is L-shaped, so the walls must be too. Wrapping it in a box put
   // an outer wall where the flights run, and left the box's empty corner walled
@@ -470,7 +483,6 @@ function build() {
 
   // The bulkhead over the turn: a solid box down to the soffit line, not a
   // floating plate on a stick.
-  const soffitH = straight * R + headroom * IN;
   const bulk = new THREE.Mesh(
     new THREE.BoxGeometry(B, top - soffitH + .4, A),
     new THREE.MeshStandardMaterial({ color: 0xb8ada0, roughness: .95 })
