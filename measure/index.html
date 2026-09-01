@@ -81,6 +81,9 @@
              background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(3px); }
   .loading.on { display:grid; }
   .loading.failed .card { border-color:var(--pinch); }
+  #loadActions { margin-top:1rem; }
+  #loadActions .row { display:flex; gap:.5rem; margin-top:.55rem; }
+  #loadActions .row button { flex:1; margin:0; }
   .loading.failed .stage { color:var(--fg); }
   .loading .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
                    padding:1.6rem 1.8rem; min-width:22rem; max-width:28rem;
@@ -115,10 +118,12 @@
     <p class="stage" id="loadStage">Nothing has left your browser.</p>
     <div class="bar"><i id="loadBar"></i></div>
     <ul class="steps2" id="loadSteps"></ul>
-    <div id="loadActions" hidden style="margin-top:1rem">
-      <button id="loadDecode" hidden class="primary" style="width:auto;margin:.3rem .3rem 0 0"></button>
-      <button id="loadPick">Choose another file</button>
-      <button id="loadClose">Close</button>
+    <div id="loadActions" hidden>
+      <button id="loadDecode" hidden class="primary"></button>
+      <div class="row">
+        <button id="loadPick">Choose another file</button>
+        <button id="loadClose">Close</button>
+      </div>
     </div>
   </div>
 </div>
