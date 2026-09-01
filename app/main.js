@@ -132,6 +132,28 @@ export const app = {
  * Wiring
  * ------------------------------------------------------------------ */
 
+/**
+ * If someone measured their own stairwell on /measure, use it. Stored in this
+ * browser only; it never went anywhere else.
+ */
+function loadMine() {
+  if (!new URLSearchParams(location.search).has('mine')) return false;
+  let raw = null;
+  try { raw = localStorage.getItem('elbowroom.staircase'); } catch { return false; }
+  if (!raw) return false;
+  let mine; try { mine = JSON.parse(raw); } catch { return false; }
+  let n = 0;
+  for (const [field, inches] of Object.entries(mine)) {
+    if (typeof inches !== 'number' || !isFinite(inches) || inches <= 0) continue;
+    if (app.setStairMeasurement(field, inches, 'Measured from your own photograph on /measure.')) n++;
+  }
+  if (n) {
+    STAIRCASE.label = 'Your staircase, measured from a photograph';
+    app.stair = plain(STAIRCASE);
+  }
+  return n > 0;
+}
+
 export function boot() {
   view.state.a = STAIRCASE.turn.widthA.value;
   view.state.b = STAIRCASE.turn.widthB.value;
@@ -197,5 +219,6 @@ export function boot() {
   view.onChange(() => app.emit());
 
   app.select(CATALOGUE[0].id);
+  if (loadMine()) app.sync();
   registerTools(app);
 }

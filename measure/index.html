@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Measure your staircase</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="description" content="Photograph your stairwell and get real inches out of it, in the browser.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#faf8f4; --fg:#1c1a17; --mut:#6b665e; --line:#e0dbd2; --card:#fff;
+    --pinch:#a3341f; --ok:#1c6b3f; --accent:#1c6b3f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#15140f; --fg:#ecebe5; --mut:#98928a; --line:#2e2b24; --card:#1d1b16;
+            --pinch:#e08a72; --ok:#6cc48d; --accent:#6cc48d; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { display:grid; grid-template-columns:1fr 23rem; min-height:100vh; }
+  @media (max-width:900px) { .wrap { grid-template-columns:1fr; } }
+
+  .stage { position:relative; display:grid; place-items:center; padding:1rem; }
+  canvas { max-width:100%; max-height:calc(100vh - 2rem); border-radius:10px;
+           border:1px solid var(--line); cursor:crosshair; touch-action:none; }
+  .drop { border:2px dashed var(--line); border-radius:14px; padding:4rem 3rem; text-align:center;
+          color:var(--mut); max-width:34rem; }
+  .drop strong { color:var(--fg); display:block; font-size:1.1rem; margin-bottom:.4rem; }
+
+  aside { border-left:1px solid var(--line); background:var(--card); padding:1.5rem 1.25rem 3rem; }
+  @media (max-width:900px) { aside { border-left:0; border-top:1px solid var(--line); } }
+  h1 { font-size:1.05rem; margin:0 0 .15rem; letter-spacing:-.01em; }
+  .tag { color:var(--mut); font-size:12.5px; margin:0 0 1.3rem; }
+  h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.09em; color:var(--mut);
+       margin:1.5rem 0 .6rem; font-weight:600; }
+  ol.steps { margin:0; padding-left:1.15rem; font-size:13px; color:var(--mut); }
+  ol.steps li { margin-bottom:.45rem; }
+  ol.steps li.now { color:var(--fg); font-weight:600; }
+  ol.steps li.done { opacity:.45; }
+
+  label { font-size:11px; color:var(--mut); display:block; margin-bottom:.15rem; }
+  input, select { font:inherit; width:100%; padding:.4rem .5rem; border-radius:6px;
+                  border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+  button { font:inherit; padding:.45rem .8rem; border-radius:7px; border:1px solid var(--line);
+           background:transparent; color:var(--fg); cursor:pointer; margin:.3rem .3rem 0 0; }
+  button:hover { border-color:var(--fg); }
+  button.primary { background:var(--fg); color:var(--bg); border-color:var(--fg); width:100%; margin-top:.8rem; }
+  button:disabled { opacity:.4; cursor:default; }
+
+  .reading { border:1px solid var(--accent); border-radius:9px; padding:.7rem .8rem; margin-top:.9rem;
+             font-size:1.35rem; letter-spacing:-.01em; }
+  .reading small { display:block; font-size:11.5px; color:var(--mut); letter-spacing:0; margin-top:.15rem; }
+  ul.marks { list-style:none; margin:.6rem 0 0; padding:0; font-size:12.5px; }
+  ul.marks li { display:flex; justify-content:space-between; padding:.3rem 0; border-top:1px solid var(--line); }
+  ul.marks li span:last-child { font-family:ui-monospace,monospace; }
+  .note { font-size:12px; color:var(--mut); margin-top:.8rem; }
+  .banner { border:1px solid var(--pinch); border-radius:9px; padding:.7rem .85rem;
+            font-size:12.5px; margin-bottom:1rem; }
+  body[data-webmcp="present"] .banner { display:none; }
+  code { font-size:11.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <div id="scrub" hidden style="width:100%;max-width:60rem;margin-bottom:.6rem">
+      <input type="range" id="frame" min="0" max="1000" value="0" style="width:100%">
+      <p class="note" id="frametime" style="margin:.2rem 0 0;text-align:center"></p>
+    </div>
+    <div class="drop" id="drop">
+      <strong>Drop a photo or a video of your stairwell</strong>
+      Or click to choose one. A short clip is often easier than a good still: scrub to the
+      clearest frame and measure on that.<br><br>
+      It is read in this page and never uploaded anywhere.
+      <input type="file" id="file" accept="image/*,video/*" hidden>
+    </div>
+    <canvas id="cv" hidden></canvas>
+  </div>
+
+  <aside>
+    <h1>Measure your staircase</h1>
+    <p class="tag">Real inches out of one photograph, in the browser. No upload, no GPU.</p>
+
+    <div class="banner" id="banner">
+      <strong>No site tools in this browser.</strong> The measuring works, but the agent cannot help.
+      Use ChatGPT's desktop browser, or Chrome or Edge with
+      <code>chrome://flags/#enable-webmcp-testing</code> enabled.
+    </div>
+
+    <h2>How this works</h2>
+    <ol class="steps" id="steps">
+      <li id="s1">Load a photo of the floor at your turn.</li>
+      <li id="s2">Click the four corners of something you know the size of, clockwise. A tread, a
+        floor tile, a sheet of paper.</li>
+      <li id="s3">Tell me its real size.</li>
+      <li id="s4">Now click any two points and get real inches.</li>
+    </ol>
+
+    <h2>The reference</h2>
+    <div class="two">
+      <div><label>width in</label><input id="rw" type="number" step="0.25" value="41.5"></div>
+      <div><label>depth in</label><input id="rh" type="number" step="0.25" value="41.5"></div>
+    </div>
+    <p class="note" id="refstate">Waiting for four corners.</p>
+
+    <div class="reading" id="reading" hidden></div>
+
+    <h2>Assign to your staircase</h2>
+    <select id="field">
+      <option value="clearWidth">Clear width of the run</option>
+      <option value="turn.widthA">Turn, first span</option>
+      <option value="turn.widthB">Turn, second span</option>
+      <option value="turn.headroom">Headroom over the turn</option>
+    </select>
+    <button id="assign" disabled>Save this reading</button>
+    <ul class="marks" id="marks"></ul>
+
+    <button class="primary" id="send" disabled>Use this staircase in Elbow Room</button>
+    <p class="note">Saved in this browser only. Nothing is sent anywhere.</p>
+
+    <h2>Ask your agent</h2>
+    <p class="note">
+      &ldquo;Set the reference to a 41 and a half inch tread.&rdquo;<br>
+      &ldquo;What have I measured so far?&rdquo;<br>
+      &ldquo;Save the last reading as the clear width.&rdquo;<br>
+      &ldquo;Send my staircase to Elbow Room.&rdquo;
+    </p>
+    <button id="reset">Start again</button>
+  </aside>
+</div>
+
+<script type="module">
+import { createSession, project, distance } from '../app/calibrate.js';
+import { ft } from '../app/units.js';
+
+const S = createSession();
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const drop = document.getElementById('drop');
+const file = document.getElementById('file');
+let pending = null;          // first point of a measurement in progress
+let last = null;             // last completed reading, in inches
+const saved = {};            // field -> inches
+
+/* ---------- photo in, entirely locally ---------- */
+
+drop.onclick = () => file.click();
+drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; };
+drop.ondragleave = () => drop.style.borderColor = '';
+drop.ondrop = e => { e.preventDefault(); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); };
+file.onchange = () => file.files[0] && load(file.files[0]);
+
+function load(f) {
+  if (f.type.startsWith('video/')) return loadVideo(f);
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      S.image = img;
+      const max = 1100;
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      cv.width = img.width * k; cv.height = img.height * k;
+      cv.hidden = false; drop.hidden = true;
+      draw(); steps();
+    };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(f);          // stays in the page
+}
+
+/**
+ * Video in. A clip of someone walking the stairs is easier to shoot than a
+ * square-on still, so take the frame the user picks and treat it as the photo.
+ * Decoding happens in the page; nothing is uploaded.
+ */
+let video = null;
+function loadVideo(f) {
+  video = document.createElement('video');
+  video.preload = 'auto';
+  video.muted = true;
+  video.src = URL.createObjectURL(f);
+  video.onloadeddata = () => {
+    const max = 1100;
+    const k = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
+    cv.width = video.videoWidth * k; cv.height = video.videoHeight * k;
+    cv.hidden = false; drop.hidden = true;
+    document.getElementById('scrub').hidden = false;
+    grabFrame(0);
+  };
+}
+
+function grabFrame(t) {
+  if (!video) return;
+  video.currentTime = Math.min(t, Math.max(0, video.duration - 0.05));
+  video.onseeked = () => {
+    const c = document.createElement('canvas');
+    c.width = cv.width; c.height = cv.height;
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    const img = new Image();
+    img.onload = () => { S.image = img; S.reset(); draw(); steps(); };
+    img.src = c.toDataURL('image/jpeg', 0.92);
+    document.getElementById('frametime').textContent =
+      video.currentTime.toFixed(2) + ' s of ' + video.duration.toFixed(2) + ' s';
+  };
+}
+
+document.getElementById('frame').oninput = e => {
+  if (!video || !isFinite(video.duration)) return;
+  grabFrame((e.target.value / 1000) * video.duration);
+};
+
+/* ---------- clicking ---------- */
+
+cv.onclick = e => {
+  const r = cv.getBoundingClientRect();
+  const p = { x: (e.clientX - r.left) * (cv.width / r.width),
+              y: (e.clientY - r.top) * (cv.height / r.height) };
+  if (S.refPoints.length < 4) { S.addPoint(p); }
+  else if (!pending) { pending = p; }
+  else { last = S.measure(pending, p); pending = null; }
+  draw(); steps(); readout();
+};
+
+/* ---------- drawing ---------- */
+
+function draw() {
+  if (!S.image) return;
+  ctx.drawImage(S.image, 0, 0, cv.width, cv.height);
+
+  // reference quad
+  if (S.refPoints.length) {
+    ctx.strokeStyle = '#e0a33a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    S.refPoints.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    if (S.refPoints.length === 4) ctx.closePath();
+    ctx.stroke();
+    S.refPoints.forEach((p, i) => dot(p, '#e0a33a', String(i + 1)));
+  }
+  // measurements
+  for (const m of S.marks) line(m.p, m.q, ft(m.inches), '#3fb27f');
+  if (pending) dot(pending, '#3fb27f');
+}
+
+function dot(p, c, label) {
+  ctx.fillStyle = c;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
+  if (label) { ctx.fillStyle = '#000'; ctx.font = 'bold 10px system-ui';
+               ctx.textAlign = 'center'; ctx.fillText(label, p.x, p.y + 3.5); ctx.textAlign = 'left'; }
+}
+
+function line(p, q, text, c) {
+  ctx.strokeStyle = c; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+  dot(p, c); dot(q, c);
+  const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+  ctx.font = 'bold 15px ui-monospace, monospace';
+  const w = ctx.measureText(text).width + 12;
+  ctx.fillStyle = 'rgba(0,0,0,.72)';
+  ctx.fillRect(mx - w / 2, my - 22, w, 22);
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+  ctx.fillText(text, mx, my - 6); ctx.textAlign = 'left';
+}
+
+/* ---------- sidebar ---------- */
+
+function steps() {
+  const at = !S.image ? 1 : S.refPoints.length < 4 ? 2 : !S.H ? 3 : 4;
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('s' + i);
+    el.className = i < at ? 'done' : i === at ? 'now' : '';
+  }
+  document.getElementById('refstate').textContent = S.H
+    ? `Calibrated against ${ft(S.refWidth)} by ${ft(S.refHeight)}. Click any two points.`
+    : `Waiting for ${4 - S.refPoints.length} more corner(s).`;
+}
+
+function readout() {
+  const el = document.getElementById('reading');
+  el.hidden = !last;
+  if (last) el.innerHTML = ft(last.inches) + '<small>' + last.inches.toFixed(1) + ' inches</small>';
+  document.getElementById('assign').disabled = !last;
+  document.getElementById('send').disabled = !Object.keys(saved).length;
+}
+
+document.getElementById('rw').oninput = sync;
+document.getElementById('rh').oninput = sync;
+function sync() {
+  S.setReference(+document.getElementById('rw').value, +document.getElementById('rh').value);
+  draw(); steps();
+}
+
+document.getElementById('assign').onclick = () => {
+  if (!last) return;
+  saved[document.getElementById('field').value] = +last.inches.toFixed(1);
+  renderMarks(); readout();
+};
+
+function renderMarks() {
+  document.getElementById('marks').innerHTML = Object.entries(saved)
+    .map(([k, v]) => `<li><span>${k}</span><span>${ft(v)}</span></li>`).join('');
+}
+
+document.getElementById('send').onclick = () => {
+  try { localStorage.setItem('elbowroom.staircase', JSON.stringify(saved)); } catch {}
+  location.href = '/?mine=1';
+};
+
+document.getElementById('reset').onclick = () => {
+  S.reset(); pending = null; last = null;
+  draw(); steps(); readout();
+};
+
+S.onChange(() => { draw(); steps(); readout(); });
+steps();
+
+/* ---------- the agent can drive all of it ---------- */
+
+const mc = document.modelContext;
+document.body.dataset.webmcp = mc ? 'present' : 'absent';
+if (mc) {
+  const reply = t => ({ content: [{ type: 'text', text: t.slice(0, 1500) }] });
+  const R = { readOnlyHint: true };
+
+  mc.registerTool({
+    name: 'calibration_status',
+    description: 'Report how far the calibration has got: whether a photo is loaded, how many ' +
+      'reference corners are clicked, the reference size, and every reading taken so far.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: R,
+    execute: async () => reply(
+      `Photo: ${S.image ? 'loaded' : 'none'}. Corners clicked: ${S.refPoints.length} of 4. ` +
+      `Reference: ${ft(S.refWidth)} by ${ft(S.refHeight)}. ` +
+      (S.H ? 'Calibrated.' : 'Not calibrated yet.') +
+      (S.marks.length ? '\nReadings: ' + S.marks.map(m => ft(m.inches)).join(', ') : '\nNo readings yet.') +
+      (Object.keys(saved).length ? '\nSaved: ' + Object.entries(saved).map(([k, v]) => k + ' ' + ft(v)).join(', ') : '')
+    )
+  });
+
+  mc.registerTool({
+    name: 'set_reference_size',
+    description: 'Set the real width and depth of the thing being used as the calibration ' +
+      'reference, in inches. A stair tread, a floor tile, a sheet of paper.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        width_in: { type: 'number', description: 'Real width of the reference, inches.' },
+        depth_in: { type: 'number', description: 'Real depth of the reference, inches.' }
+      },
+      required: ['width_in', 'depth_in']
+    },
+    execute: async ({ width_in, depth_in }) => {
+      document.getElementById('rw').value = width_in;
+      document.getElementById('rh').value = depth_in;
+      sync();
+      return reply(`Reference set to ${ft(width_in)} by ${ft(depth_in)}.` +
+                   (S.H ? ' Recalibrated.' : ' Still needs four corners.'));
+    }
+  });
+
+  mc.registerTool({
+    name: 'save_reading',
+    description: 'File the most recent reading against one of the staircase measurements, so it ' +
+      'can be carried over into the planner.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        field: { type: 'string', description: 'Which measurement.',
+                 enum: ['clearWidth', 'turn.widthA', 'turn.widthB', 'turn.headroom'] }
+      },
+      required: ['field']
+    },
+    execute: async ({ field }) => {
+      if (!last) return reply('No reading yet. Click two points on the photo first.');
+      saved[field] = +last.inches.toFixed(1);
+      renderMarks(); readout();
+      return reply(`${field} saved as ${ft(last.inches)}.`);
+    }
+  });
+
+  mc.registerTool({
+    name: 'send_to_planner',
+    description: 'Carry the measured staircase over to Elbow Room so the fit checks run against ' +
+      'this house instead of the sample one.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      if (!Object.keys(saved).length) return reply('Nothing saved yet.');
+      try { localStorage.setItem('elbowroom.staircase', JSON.stringify(saved)); } catch {}
+      setTimeout(() => location.href = '/?mine=1', 400);
+      return reply('Saved and opening the planner with your staircase.');
+    }
+  });
+}
+</script>
+</body>
+</html>
