@@ -67,6 +67,16 @@
   ul.marks li { display:flex; justify-content:space-between; padding:.3rem 0; border-top:1px solid var(--line); }
   ul.marks li span:last-child { font-family:ui-monospace,monospace; }
   .note { font-size:12px; color:var(--mut); margin-top:.8rem; }
+  .advice { border:1px solid var(--line); border-radius:9px; padding:.65rem .75rem;
+             margin-top:.9rem; font-size:12.5px; }
+  .advice.good { border-color:var(--ok); }
+  .advice.warn { border-color:#c9902f; }
+  .advice b { display:block; margin-bottom:.25rem; }
+  .advice ul { margin:.35rem 0 0; padding-left:1.05rem; color:var(--mut); }
+  .strip { display:flex; gap:.35rem; overflow-x:auto; margin-top:.7rem; padding-bottom:.2rem; }
+  .strip img { height:3.1rem; border-radius:6px; border:2px solid transparent; cursor:pointer;
+               opacity:.6; flex:0 0 auto; }
+  .strip img.on { border-color:var(--accent); opacity:1; }
   .loading { position:fixed; inset:0; z-index:60; display:none; place-items:center;
              background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(3px); }
   .loading.on { display:grid; }
@@ -113,12 +123,12 @@
       <p class="note" id="frametime" style="margin:.2rem 0 0;text-align:center"></p>
     </div>
     <div class="drop" id="drop">
-      <strong>Drop a photo or a video of your stairwell</strong>
-      Or click to choose one. A short clip is often easier than a good still: scrub to the
-      clearest frame and measure on that.<br><br>
+      <strong>Drop photos or a video of your stairwell</strong>
+      Drop several and the sharpest is picked for you. A short clip works too, and the
+      clearest frame is chosen automatically.<br><br>
       It is read in this page and never uploaded anywhere.<br><br>
       <button id="example" style="margin:0">No photo handy? Use the real staircase</button>
-      <input type="file" id="file" accept="image/*,video/*" hidden>
+      <input type="file" id="file" accept="image/*,video/*" multiple hidden>
     </div>
     <canvas id="cv" hidden></canvas>
     <canvas id="pano" hidden></canvas>
@@ -162,6 +172,8 @@
     <p class="note" id="refstate">Waiting for four corners.</p>
     </div>
 
+    <div id="advice" class="advice" hidden></div>
+    <div id="strip" class="strip" hidden></div>
     <div class="reading" id="reading" hidden></div>
 
     <h2>Assign to your staircase</h2>
@@ -237,6 +249,65 @@ const Loader = {
     setTimeout(() => this.el.classList.remove('on'), 2200);
   }
 };
+/**
+ * Say how usable a frame is, and what to do about it.
+ *
+ * People photograph stairwells badly, and they should: they are dark, cramped
+ * and awkward. A soft or dim frame gives a soft corner, a soft corner gives a
+ * wrong number, and a wrong number quietly presented is worse than a warning.
+ */
+function assess(img) {
+  const c = document.createElement('canvas');
+  const k = Math.min(1, 320 / Math.max(img.width, img.height));
+  c.width = Math.max(2, (img.width * k) | 0);
+  c.height = Math.max(2, (img.height * k) | 0);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0, c.width, c.height);
+  const d = g.getImageData(0, 0, c.width, c.height).data;
+
+  const lum = (x, y) => {
+    const o = (y * c.width + x) * 4;
+    return d[o] * 0.299 + d[o + 1] * 0.587 + d[o + 2] * 0.114;
+  };
+  let sharp = 0, bright = 0, dark = 0, blown = 0, n = 0;
+  for (let y = 1; y < c.height - 1; y++)
+    for (let x = 1; x < c.width - 1; x++) {
+      const L = lum(x, y);
+      sharp += Math.abs(4 * L - lum(x - 1, y) - lum(x + 1, y) - lum(x, y - 1) - lum(x, y + 1));
+      bright += L; n++;
+      if (L < 24) dark++;
+      if (L > 246) blown++;
+    }
+  return {
+    sharpness: sharp / n,
+    brightness: bright / n,
+    darkFrac: dark / n,
+    blownFrac: blown / n,
+    megapixels: (img.width * img.height) / 1e6,
+    ratio: img.width / img.height
+  };
+}
+
+function showAdvice(a) {
+  const el = document.getElementById('advice');
+  const tips = [];
+  if (a.sharpness < 6) tips.push('It is soft. Hold still, or pick a different frame from the strip.');
+  if (a.brightness < 55) tips.push('It is dark. Put the stair light on, corners are hard to place in shadow.');
+  if (a.darkFrac > 0.35) tips.push('Large areas are in shadow. More light will make the corners findable.');
+  if (a.blownFrac > 0.08) tips.push('Some of it is blown out. Shoot away from the window, or at another time of day.');
+  if (a.megapixels < 0.4) tips.push('It is low resolution, so clicks land coarsely.');
+  if (a.ratio > 1.85 && a.ratio < 2.15) tips.push('This looks like a 360 frame. Use the sphere flow and give the camera height.');
+  tips.push('Aim for something rectangular and flat in shot whose real size you know: a tread, a floor tile, a sheet of paper.');
+  tips.push('Shoot square on to the floor rather than along it. A very oblique angle makes the far corners imprecise.');
+
+  const good = tips.length <= 2;
+  el.hidden = false;
+  el.className = 'advice ' + (good ? 'good' : 'warn');
+  el.innerHTML = '<b>' + (good ? 'This frame should measure well' : 'This frame will work, but') + '</b>' +
+    `<span style="color:var(--mut)">sharpness ${a.sharpness.toFixed(1)}, brightness ${a.brightness.toFixed(0)}, ` +
+    `${a.megapixels.toFixed(1)} MP</span><ul>` + tips.map(t => '<li>' + t + '</li>').join('') + '</ul>';
+}
+
 const breathe = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -266,8 +337,78 @@ document.getElementById('example').onclick = e => {
 };
 drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; };
 drop.ondragleave = () => drop.style.borderColor = '';
-drop.ondrop = e => { e.preventDefault(); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); };
-file.onchange = () => file.files[0] && load(file.files[0]);
+drop.ondrop = e => { e.preventDefault(); intake([...e.dataTransfer.files]); };
+file.onchange = () => intake([...file.files]);
+
+/**
+ * Take whatever was dropped. One video goes down the video path. Several
+ * photos get scored and the sharpest is opened, with the rest one click away,
+ * because the frame someone happens to drop first is rarely their best one.
+ */
+const gallery = [];
+async function intake(files) {
+  files = files.filter(f => /^(image|video)\//.test(f.type));
+  if (!files.length) return Loader.fail('That file type cannot be read in a browser. JPEG, PNG, WebP or MP4.');
+  const vid = files.find(f => f.type.startsWith('video/'));
+  if (vid) return load(vid);
+  if (files.length === 1) return load(files[0]);
+
+  Loader.show('Reading your photos', ['Decoding them', 'Scoring each for sharpness', 'Opening the best']);
+  gallery.length = 0;
+  for (let i = 0; i < files.length; i++) {
+    Loader.at(0, (i / files.length) * 40, `Photo ${i + 1} of ${files.length}`);
+    await breathe();
+    const img = await asImage(files[i]);
+    if (!img) continue;
+    gallery.push({ img, name: files[i].name, a: assess(img) });
+  }
+  if (!gallery.length) return Loader.fail('None of those could be decoded here.');
+  Loader.at(1, 70, 'Comparing them');
+  await breathe();
+  gallery.sort((p, q) => q.a.sharpness - p.a.sharpness);
+  Loader.at(2, 92, `Opening ${gallery[0].name}`);
+  renderStrip();
+  await breathe();
+  useImage(gallery[0]);
+  Loader.done();
+}
+
+function asImage(f) {
+  return new Promise(res => {
+    const fr = new FileReader();
+    fr.onload = () => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = fr.result; };
+    fr.onerror = () => res(null);
+    fr.readAsDataURL(f);
+  });
+}
+
+function renderStrip() {
+  const el = document.getElementById('strip');
+  if (gallery.length < 2) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = '';
+  gallery.forEach((g, i) => {
+    const t = document.createElement('img');
+    t.src = g.img.src; t.title = `${g.name} · sharpness ${g.a.sharpness.toFixed(1)}`;
+    if (i === 0) t.className = 'on';
+    t.onclick = () => {
+      [...el.children].forEach(c => c.classList.remove('on'));
+      t.classList.add('on');
+      useImage(g);
+    };
+    el.appendChild(t);
+  });
+}
+
+function useImage(g) {
+  if (looksEquirectangular(g.img.width, g.img.height)) return startPano(g.img);
+  S.image = g.img; S.reset();
+  const max = 1100, k = Math.min(1, max / Math.max(g.img.width, g.img.height));
+  cv.width = g.img.width * k; cv.height = g.img.height * k;
+  cv.hidden = false; drop.hidden = true;
+  draw(); steps();
+  showAdvice(g.a);
+}
 
 function load(f) {
   if (f.type.startsWith('video/')) return loadVideo(f);
@@ -285,6 +426,7 @@ function load(f) {
       cv.width = img.width * k; cv.height = img.height * k;
       cv.hidden = false; drop.hidden = true;
       draw(); steps();
+      showAdvice(assess(img));
       Loader.done();
     };
     img.src = fr.result;
@@ -386,6 +528,7 @@ function grabFrame(t) {
     img.onload = () => {
       if (looksEquirectangular(img.width, img.height)) { Loader.done(); return startPano(img); }
       S.image = img; S.reset(); draw(); steps();
+      showAdvice(assess(img));
       Loader.done();
     };
     img.src = c.toDataURL('image/jpeg', 0.92);
