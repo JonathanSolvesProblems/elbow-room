@@ -433,6 +433,13 @@ function build() {
     h += R;
   }
 
+  // Where the walls stop: headroom above the top landing, which `h` now holds
+  // after both flights and the winders. This was undeclared, so it resolved to
+  // window.top, every arithmetic on it came out NaN, and the two meshes built
+  // from it (the room shell and the bulkhead) were silently dropped by three.
+  // That is why the soffit read as a red plate floating on a stick.
+  const top = h + headroom * IN;
+
   // The shaft is L-shaped, so the walls must be too. Wrapping it in a box put
   // an outer wall where the flights run, and left the box's empty corner walled
   // off around nothing. This extrudes the actual footprint: outer walls down

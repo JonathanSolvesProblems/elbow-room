@@ -46,6 +46,32 @@ function reply(text) {
   return { content: [{ type: 'text', text: t }] };
 }
 
+/**
+ * Check the numbers before doing geometry with them.
+ *
+ * A model will sometimes omit a required argument, or send "91" as a string,
+ * or send a negative depth. Without this the arithmetic still runs and the tool
+ * answers confidently in nonsense: "at n/a deep the longest is n/a", or a
+ * verdict of "it does not go" computed from undefined. A wrong answer stated
+ * plainly is worse than no answer, so say exactly what is missing and let the
+ * agent try again.
+ *
+ * Returns a corrected object of numbers, or a string describing the problem.
+ */
+function inches(args, names, { min = 0.1, max = 600 } = {}) {
+  const out = {};
+  const bad = [];
+  for (const n of names) {
+    const v = typeof args[n] === 'string' ? Number(args[n].trim()) : args[n];
+    if (v === undefined || v === null || v === '') bad.push(`${n} is missing`);
+    else if (!Number.isFinite(v)) bad.push(`${n} is not a number`);
+    else if (v < min) bad.push(`${n} must be at least ${min} in, got ${v}`);
+    else if (v > max) bad.push(`${n} of ${v} in is larger than any house, in inches please`);
+    else out[n] = v;
+  }
+  return bad.length ? bad.join('. ') + '. Give every dimension in inches.' : out;
+}
+
 /** Tools registered only while the current object fails. */
 let remedyController = null;
 
@@ -135,7 +161,10 @@ export function registerTools(app) {
       required: ['length_in', 'depth_in', 'height_in']
     },
     annotations: R,
-    execute: async ({ length_in, depth_in, height_in }) => {
+    execute: async (args) => {
+      const v = inches(args, ['length_in', 'depth_in', 'height_in']);
+      if (typeof v === 'string') return reply(v);
+      const { length_in, depth_in, height_in } = v;
       const { checkPath } = await import('./geometry.js');
       const r = checkPath(
         { length: length_in, width: depth_in, height: height_in },
@@ -163,7 +192,10 @@ export function registerTools(app) {
       required: ['depth_in']
     },
     annotations: R,
-    execute: async ({ depth_in }) => {
+    execute: async (args) => {
+      const v = inches(args, ['depth_in']);
+      if (typeof v === 'string') return reply(v);
+      const { depth_in } = v;
       const c = app.longestAt(depth_in);
       if (c.tooWide) return reply(
         `Nothing. At ${ft(depth_in)} deep it is wider than the ${ft(app.stair.clearWidth)} run, ` +
@@ -233,7 +265,11 @@ export function registerTools(app) {
     },
     // The label is free text from a person, so mark the echo as untrusted.
     annotations: { untrustedContentHint: true },
-    execute: async ({ length_in, depth_in, height_in, label }) => {
+    execute: async (args) => {
+      const v = inches(args, ['length_in', 'depth_in', 'height_in']);
+      if (typeof v === 'string') return reply(v);
+      const { length_in, depth_in, height_in } = v;
+      const { label } = args;
       app.setDims({
         length: length_in, depth: depth_in, height: height_in,
         label: label ? String(label).slice(0, 40) : 'Custom object'
@@ -272,8 +308,18 @@ export function registerTools(app) {
         angle_deg: { type: 'number', description: 'Rotation in degrees, 0 is along the lower arm.' }
       }
     },
-    execute: async ({ x_in, y_in, angle_deg }) => {
-      app.place({ x: x_in, y: y_in, angle: angle_deg });
+    execute: async (args) => {
+      // Every field here is optional, so take the ones that are real numbers
+      // and leave the rest alone rather than writing NaN into the plan.
+      const move = {};
+      for (const [k, f] of [['x_in', 'x'], ['y_in', 'y'], ['angle_deg', 'angle']]) {
+        const n = typeof args[k] === 'string' ? Number(args[k].trim()) : args[k];
+        if (Number.isFinite(n)) move[f] = n;
+      }
+      if (!Object.keys(move).length) {
+        return reply('Nothing to move by. Give at least one of x_in, y_in or angle_deg as a number.');
+      }
+      app.place(move);
       return reply('Moved.');
     }
   });
@@ -289,6 +335,8 @@ export function registerTools(app) {
       required: ['removed']
     },
     execute: async ({ removed }) => {
+      if (typeof removed === 'string') removed = !/^(false|no|0)$/i.test(removed.trim());
+      if (typeof removed !== 'boolean') return reply('Say removed: true to take it off, false to rehang.');
       app.setDoorRemoved(removed);
       const r = app.verdict();
       return reply(`Door leaf ${removed ? 'removed' : 'rehung'}. ` +
@@ -326,14 +374,22 @@ export function registerTools(app) {
       },
       required: ['field', 'inches']
     },
-    execute: async ({ field, inches }, second) => {
+    execute: async (args, second) => {
+      const field = args.field;
+      const v = inches(args, ['inches'], { min: 1, max: 240 });
+      if (typeof v === 'string') return reply(v);
+      const inchesValue = v.inches;
+      if (!['clearWidth', 'turn.widthA', 'turn.widthB', 'turn.headroom'].includes(field)) {
+        return reply('That is not a measurement this staircase keeps. ' +
+                     'Use clearWidth, turn.widthA, turn.widthB or turn.headroom.');
+      }
       if (second && typeof second.requestUserInteraction === 'function') {
         try { await second.requestUserInteraction(); } catch { /* fall through to the in-page ask */ }
       }
-      const ok = await askHuman(`Record ${field} as ${ft(inches)}? This changes every verdict.`);
+      const ok = await askHuman(`Record ${field} as ${ft(inchesValue)}? This changes every verdict.`);
       if (!ok) return reply('The person declined. Nothing was changed.');
-      app.setStairMeasurement(field, inches, 'Confirmed by the person at the keyboard.');
-      return reply(`${field} is now ${ft(inches)} and marked as measured. ` +
+      app.setStairMeasurement(field, inchesValue, 'Confirmed by the person at the keyboard.');
+      return reply(`${field} is now ${ft(inchesValue)} and marked as measured. ` +
                    `${app.unknowns().length} placeholder(s) left.`);
     }
   });
