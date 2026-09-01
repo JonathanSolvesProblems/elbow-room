@@ -16,6 +16,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ft } from './units.js';
 
 const IN = 0.0254;                     // inches to metres, so the camera behaves
 let renderer, scene, camera, controls, shaftGroup, objectMesh, raf = 0;
@@ -518,11 +519,12 @@ function placeObject() {
 
   objectMesh = new THREE.Mesh(geo, mat);
   objectMesh.castShadow = true;
-  objectMesh.add(dimensionLabel(L, W, H));
   objectMesh.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
     new THREE.LineBasicMaterial({ color: colour })
   ));
+
+  objectMesh.add(dimensionLabel(L, W, H, !M.touching));
 
   const tilt = (M.upright ? 90 : M.tilt) * Math.PI / 180;
   if (shape === 'cylinder') {
@@ -540,30 +542,31 @@ function placeObject() {
   scene.add(objectMesh);
 }
 
-/** A little sprite carrying the object's real size, always facing the camera. */
-function dimensionLabel(L, W, H) {
+/** A little sprite carrying the object's real size and how it is doing. */
+function dimensionLabel(L, W, H, clear) {
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 128;
+  c.width = 512; c.height = 176;
   const g = c.getContext('2d');
-  g.fillStyle = 'rgba(0,0,0,.62)';
-  g.roundRect(0, 0, 512, 128, 18); g.fill();
+  g.fillStyle = 'rgba(0,0,0,.66)';
+  g.roundRect(0, 0, 512, 176, 20); g.fill();
+  g.textAlign = 'center';
   g.fillStyle = '#fff';
   g.font = 'bold 46px ui-monospace, monospace';
-  g.textAlign = 'center';
-  g.fillText(`${ftLocal(L)} × ${ftLocal(W)} × ${ftLocal(H)}`, 256, 82);
+  g.fillText(`${ft(L)} × ${ft(W)} × ${ft(H)}`, 256, 68);
+  // Say what the colour means, so a red object beside a green verdict is not a
+  // riddle. The verdict answers "can it get up at all", this answers "is it
+  // touching anything right here".
+  g.fillStyle = clear ? '#7fe3ae' : '#ffb199';
+  g.font = '30px ui-sans-serif, system-ui, sans-serif';
+  g.fillText(clear ? 'clear where it is' : 'touching here', 256, 124);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
-  sp.scale.set(1.0, 0.25, 1);
-  sp.position.y = H * IN * 0.5 + 0.22;
+  sp.scale.set(1.15, 0.4, 1);
+  sp.position.y = H * IN * 0.5 + 0.26;
   return sp;
 }
 
-function ftLocal(inches) {
-  const f = Math.floor(inches / 12), r = Math.round((inches - f * 12) * 2) / 2;
-  if (f === 0) return r + '"';
-  return r === 0 ? f + "'" : f + "'" + r + '"';
-}
 
 function floorAtInches(x, y) {
   const straight = Math.max(1, M.treads - M.winders);
