@@ -301,6 +301,13 @@ function build() {
     h += R;
   }
 
+  // Upper arm, climbing away from the turn.
+  for (let i = 0; i < straight; i++) {
+    const y = A + (i + 0.5) * G;
+    step('y', y, B, h + R);
+    h += R;
+  }
+
   // The shaft is L-shaped, so the walls must be too. Wrapping it in a box put
   // an outer wall where the flights run, and left the box's empty corner walled
   // off around nothing. This extrudes the actual footprint: outer walls down
