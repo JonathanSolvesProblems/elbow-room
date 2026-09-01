@@ -86,7 +86,12 @@ export function attach(canvas) {
     if (e.detail === 'right') sph.theta -= Math.PI / 8;
     if (e.detail === 'in')    sph.radius = Math.max(controls.minDistance, sph.radius * 0.8);
     if (e.detail === 'out')   sph.radius = Math.min(controls.maxDistance, sph.radius * 1.25);
-    if (e.detail === 'reset') return frameAll();
+    if (e.detail === 'reset') {
+      M.pos = { x: M.b + M.object.length * 0.55 + 6, y: M.a / 2 };
+      placeObject();
+      if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
+      return frameAll();
+    }
     camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(sph));
     controls.update();
   });
@@ -157,7 +162,7 @@ function bindDrag(canvas) {
     ray.setFromCamera(ndc, camera);
     if (!ray.ray.intersectPlane(plane, hit)) return;
     const p = hit.add(grabOffset);
-    M.pos = { x: p.x / IN, y: p.z / IN };
+    M.pos = clampToShaft(p.x / IN, p.z / IN);
     placeObject();
     if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
   });
@@ -169,6 +174,32 @@ function bindDrag(canvas) {
   };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
+}
+
+/**
+ * Keep the object in the building.
+ *
+ * Nothing stopped a drag carrying it out through a wall and off into the void,
+ * where it was simply lost with no way back. The L is the union of two arms, so
+ * clamp into whichever arm is nearer and let it travel the full length of that
+ * arm, plus a little overhang because a long object legitimately sticks out
+ * past the bottom of the flight.
+ */
+function clampToShaft(x, y) {
+  const straight = Math.max(1, M.treads - M.winders);
+  const run = straight * M.going;
+  const overhang = M.object.length * 0.55;
+  const maxX = M.b + run + overhang;
+  const maxY = M.a + run + overhang;
+
+  x = Math.min(Math.max(x, 0), maxX);
+  y = Math.min(Math.max(y, 0), maxY);
+
+  // Outside both arms: push back into the closer one.
+  if (x > M.b && y > M.a) {
+    if (M.a - y > M.b - x) y = M.a; else x = M.b;
+  }
+  return { x, y };
 }
 
 /* ------------------------------------------------------------------ *
