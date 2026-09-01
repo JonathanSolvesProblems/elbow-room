@@ -120,8 +120,39 @@ document.modelContext.registerTool({
 | Writes | `select_object` `set_dimensions` `show_pinch` `place_object` `remove_door_leaf` `reset_canvas` |
 | Consequential | `record_measurement`, which asks a human before it changes anything |
 | Registered dynamically | `try_without_feet` `how_short_to_fit`, only while something is failing |
+| Shared across origins | `check_fit`, read-only, exposed to one named origin |
 
-Four decisions worth calling out:
+### One tool crosses an origin boundary
+
+Live: **https://halliwell-and-co.vercel.app** (a fictional furniture shop, source in [`partner/`](partner/))
+
+The shop sells a sofa at 91 by 36 by 48 inches. It embeds this planner in an `<iframe allow="tools">`
+and has one button: **Ask my staircase**. Press it and the shop calls `check_fit` on *your* origin and
+prints your staircase's answer.
+
+```js
+// here: name the one origin allowed to ask
+registerTool({ name: 'check_fit', /* ... */ }, { exposedTo: ['https://halliwell-and-co.vercel.app'] });
+
+// there: the shop must ask for us by name
+const tools = await document.modelContext.getTools({
+  fromOrigins: ['https://elbow-room-sand.vercel.app']
+});
+```
+
+Consent is mutual and no side can act alone. The tool names the shop, the shop names the tool's
+origin, and the browser refuses registration in a cross-origin frame unless the host grants
+`allow="tools"`. Any one of the three withheld and nothing happens.
+
+**Exactly one tool is shared and it is read-only.** Nothing that writes crosses. The shop gets a yes
+or no about a sofa whose dimensions it already published. It never learns the staircase
+measurements, never sees the plan, and cannot move anything.
+
+This is the part of the spec that is actually about the *open* web. Two sites with no API between
+them, no SDK, no shared account and no data exchange beyond one question and one answer, cooperating
+because both said yes.
+
+### Four more decisions worth calling out
 
 **One controller owns every mutation.** The dropdown, the drag handles and the agent all take the
 same path. When the agent moves the couch, it moves on your screen, because it is the same couch.
