@@ -227,6 +227,14 @@ const Loader = {
   el: document.getElementById('loading'),
   steps: [],
   show(title, steps) {
+    // Nothing here is allowed to hang. If a stage stalls, say so and get out of
+    // the way rather than leaving a progress bar sitting there forever.
+    clearTimeout(this._guard);
+    this._guard = setTimeout(() => {
+      if (this.el.classList.contains('on')) {
+        this.fail('That is taking longer than expected. The frame is on screen, carry on with it.');
+      }
+    }, 45000);
     this.steps = steps;
     document.getElementById('loadTitle').textContent = title;
     document.getElementById('loadSteps').innerHTML =
@@ -243,8 +251,10 @@ const Loader = {
       li.querySelector('b').textContent = n < i ? '\u2713' : n === i ? '\u203A' : '\u00B7';
     });
   },
-  done() { this.at(this.steps.length, 100); setTimeout(() => this.el.classList.remove('on'), 420); },
+  done() { clearTimeout(this._guard); this.at(this.steps.length, 100);
+           setTimeout(() => this.el.classList.remove('on'), 420); },
   fail(msg) {
+    clearTimeout(this._guard);
     document.getElementById('loadStage').textContent = msg;
     setTimeout(() => this.el.classList.remove('on'), 2200);
   }
@@ -513,17 +523,25 @@ async function bestFrameTime(samples = 12) {
 
 function seekTo(t) {
   return new Promise(res => {
-    const done = () => { video.removeEventListener('seeked', done); res(); };
+    const target = Math.min(t, Math.max(0, video.duration - 0.05));
+    if (Math.abs(video.currentTime - target) < 0.02) return res();
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; video.removeEventListener('seeked', done); res(); };
     video.addEventListener('seeked', done);
-    video.currentTime = Math.min(t, Math.max(0, video.duration - 0.05));
+    video.currentTime = target;
+    setTimeout(done, 1200);          // a media event that never arrives must not stop the run
   });
 }
 }
 
 function grabFrame(t) {
   if (!video) return;
-  video.currentTime = Math.min(t, Math.max(0, video.duration - 0.05));
-  video.onseeked = () => {
+  const target = Math.min(t, Math.max(0, video.duration - 0.05));
+  // Seeking to the time the video is already at fires no `seeked` event, so
+  // waiting for one hangs forever. The sampling pass often leaves it sitting on
+  // exactly the frame we then ask for, which is how the loader got stuck.
+  const already = Math.abs(video.currentTime - target) < 0.02;
+  const paint = () => {
     const c = document.createElement('canvas');
     c.width = cv.width; c.height = cv.height;
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
@@ -538,6 +556,11 @@ function grabFrame(t) {
     document.getElementById('frametime').textContent =
       video.currentTime.toFixed(2) + ' s of ' + video.duration.toFixed(2) + ' s';
   };
+  if (already) return paint();
+  video.onseeked = paint;
+  video.currentTime = target;
+  // And never trust a media event to arrive. If it does not, paint anyway.
+  setTimeout(() => { if (video && video.onseeked === paint) { video.onseeked = null; paint(); } }, 1500);
 }
 
 document.getElementById('frame').oninput = e => {
