@@ -198,10 +198,13 @@
       <option value="turn.headroom">Headroom over the turn</option>
     </select>
     <button id="assign" disabled>Save this reading</button>
+    <p class="note" id="assignWhy" style="margin-top:.4rem"></p>
     <ul class="marks" id="marks"></ul>
+    <p class="note" id="forgetWrap" hidden style="margin-top:.3rem">
+      <a href="#" id="forget" style="color:var(--mut)">Forget these readings</a></p>
 
     <button class="primary" id="send" disabled>Use this staircase in Elbow Room</button>
-    <p class="note">Saved in this browser only. Nothing is sent anywhere.</p>
+    <p class="note" id="sendWhy">Saved in this browser only. Nothing is sent anywhere.</p>
 
     <h2>Ask your agent</h2>
     <p class="note">
@@ -1005,7 +1008,16 @@ function readout() {
   el.hidden = !last;
   if (last) el.innerHTML = ft(last.inches) + '<small>' + last.inches.toFixed(1) + ' inches</small>';
   document.getElementById('assign').disabled = !last;
-  document.getElementById('send').disabled = !Object.keys(saved).length;
+  document.getElementById('assignWhy').textContent = last
+    ? `Files this ${ft(last.inches)} into the measurement chosen above.`
+    : (S.H ? 'Click any two points on the floor to get a reading.'
+           : 'Click the four corners of your reference first.');
+
+  const n = Object.keys(saved).length;
+  document.getElementById('send').disabled = !n;
+  document.getElementById('sendWhy').textContent = n
+    ? `${n} reading${n > 1 ? 's' : ''} kept in this browser. Nothing is sent anywhere.`
+    : 'Save at least one reading and this opens your own staircase in the planner.';
 }
 
 document.getElementById('rw').oninput = sync;
@@ -1018,16 +1030,51 @@ function sync() {
 document.getElementById('assign').onclick = () => {
   if (!last) return;
   saved[document.getElementById('field').value] = +last.inches.toFixed(1);
+  persist();
+  renderMarks(); readout();
+};
+
+const STORE = 'elbowroom.staircase';
+
+/**
+ * Keep the readings in this browser.
+ *
+ * Measuring a staircase is done standing on it with a phone, in several goes,
+ * and losing the first reading because the tab was closed makes the whole
+ * exercise pointless. They were only written on the way out to the planner
+ * before, so anyone who measured and came back later found an empty list.
+ */
+function persist() {
+  try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* private mode */ }
+}
+
+function restore() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORE); } catch { return; }
+  if (!raw) return;
+  let prev; try { prev = JSON.parse(raw); } catch { return; }
+  if (!prev || typeof prev !== 'object') return;
+  for (const [k, v] of Object.entries(prev)) {
+    if (typeof v === 'number' && isFinite(v) && v > 0) saved[k] = v;
+  }
+}
+
+document.getElementById('forget').onclick = e => {
+  e.preventDefault();
+  for (const k of Object.keys(saved)) delete saved[k];
+  try { localStorage.removeItem(STORE); } catch { /* nothing to remove */ }
   renderMarks(); readout();
 };
 
 function renderMarks() {
+  const n = Object.keys(saved).length;
   document.getElementById('marks').innerHTML = Object.entries(saved)
     .map(([k, v]) => `<li><span>${k}</span><span>${ft(v)}</span></li>`).join('');
+  document.getElementById('forgetWrap').hidden = !n;
 }
 
 document.getElementById('send').onclick = () => {
-  try { localStorage.setItem('elbowroom.staircase', JSON.stringify(saved)); } catch {}
+  persist();
   location.href = '/?mine=1';
 };
 
@@ -1037,7 +1084,10 @@ document.getElementById('reset').onclick = () => {
 };
 
 S.onChange(() => { draw(); steps(); readout(); });
+restore();
+renderMarks();
 steps();
+readout();
 
 /* ---------- 360 footage ---------- */
 
