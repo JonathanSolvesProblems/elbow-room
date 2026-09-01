@@ -26,6 +26,21 @@ import { ft } from './units.js';
 
 const OUTPUT_CAP = 1500;
 
+/**
+ * The one origin allowed to ask this staircase anything.
+ *
+ * Cross-origin tool sharing is dual consent and this is our half of it: the
+ * shop is named here explicitly, and it must still ask for us by name through
+ * getTools({ fromOrigins }). Only check_fit is shared, it is read-only, and it
+ * answers a yes-or-no question. The shop never learns the measurements, never
+ * sees the plan, and cannot move anything.
+ *
+ * This is the part of WebMCP that is actually about the *open* web: two sites
+ * that have no API, no SDK and no account with each other, cooperating because
+ * both sides said yes.
+ */
+const PARTNER_ORIGINS = ['https://halliwell-and-co.vercel.app'];
+
 function reply(text) {
   const t = text.length > OUTPUT_CAP ? text.slice(0, OUTPUT_CAP - 1) + '…' : text;
   return { content: [{ type: 'text', text: t }] };
@@ -132,7 +147,7 @@ export function registerTools(app) {
         (r.advice.length ? '\nWorth trying: ' + r.advice.join(' ') : '')
       );
     }
-  });
+  }, { exposedTo: PARTNER_ORIGINS });
 
   reg({
     name: 'longest_that_fits',

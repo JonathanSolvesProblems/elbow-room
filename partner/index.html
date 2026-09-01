@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halliwell &amp; Co</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fdfcfa; --fg:#1a1815; --mut:#6f6a62; --line:#e6e1d8; --card:#fff; --ok:#1c6b3f; --no:#a3341f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141310; --fg:#eeece6; --mut:#98928a; --line:#2c2924; --card:#1c1a16; --ok:#6cc48d; --no:#e08a72; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { border-bottom:1px solid var(--line); padding:1rem 1.5rem; font-weight:600; letter-spacing:-.01em; }
+  header span { color:var(--mut); font-weight:400; font-size:12.5px; margin-left:.6rem; }
+  main { max-width:62rem; margin:0 auto; padding:2rem 1.5rem 4rem; display:grid;
+         grid-template-columns:1fr 20rem; gap:2.5rem; }
+  @media (max-width:820px) { main { grid-template-columns:1fr; } }
+  h1 { font-size:1.5rem; margin:0 0 .2rem; letter-spacing:-.015em; }
+  .price { font-size:1.2rem; margin:0 0 1.2rem; }
+  .spec { border-top:1px solid var(--line); padding:.5rem 0; display:flex; justify-content:space-between; font-size:13.5px; }
+  .spec span:first-child { color:var(--mut); }
+  .sofa { width:100%; border-radius:10px; border:1px solid var(--line); background:var(--card); padding:1.5rem; }
+
+  aside { border:1px solid var(--line); border-radius:10px; background:var(--card); padding:1.1rem; height:fit-content; }
+  h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.09em; color:var(--mut); margin:0 0 .6rem; font-weight:600; }
+  button { font:inherit; padding:.55rem .9rem; border-radius:8px; border:1px solid var(--fg);
+           background:var(--fg); color:var(--bg); cursor:pointer; width:100%; }
+  button:disabled { opacity:.45; cursor:default; }
+  .verdict { margin-top:.9rem; border-radius:9px; padding:.75rem .85rem; border:1px solid; font-size:13.5px; display:none; }
+  .verdict.show { display:block; }
+  .verdict.yes { border-color:var(--ok); background:color-mix(in srgb, var(--ok) 12%, transparent); }
+  .verdict.no  { border-color:var(--no); background:color-mix(in srgb, var(--no) 12%, transparent); }
+  .verdict b { display:block; margin-bottom:.25rem; }
+  .note { font-size:12px; color:var(--mut); margin-top:.7rem; }
+  iframe { width:100%; height:22rem; border:1px solid var(--line); border-radius:10px; margin-top:1.5rem; }
+  code { font-size:11.5px; }
+  .banner { border:1px solid var(--no); border-radius:9px; padding:.7rem .85rem; font-size:12.5px;
+            color:var(--no); margin-top:.8rem; display:none; }
+  .banner.show { display:block; }
+</style>
+</head>
+<body>
+<header>Halliwell &amp; Co <span>a fictional furniture shop, built to demonstrate cross-origin WebMCP</span></header>
+
+<main>
+  <div>
+    <svg class="sofa" viewBox="0 0 400 190" aria-label="Three seat leather sofa">
+      <rect x="18" y="70" width="364" height="72" rx="14" fill="#6b4a35"/>
+      <rect x="30" y="34" width="340" height="62" rx="16" fill="#7d5740"/>
+      <rect x="8" y="58" width="42" height="86" rx="14" fill="#5d4029"/>
+      <rect x="350" y="58" width="42" height="86" rx="14" fill="#5d4029"/>
+      <rect x="46" y="142" width="16" height="20" rx="4" fill="#3d2b1c"/>
+      <rect x="338" y="142" width="16" height="20" rx="4" fill="#3d2b1c"/>
+    </svg>
+
+    <h1 style="margin-top:1.6rem">The Ardmore, three seat</h1>
+    <p class="price">$2,480</p>
+    <div class="spec"><span>Width</span><span>91 in</span></div>
+    <div class="spec"><span>Depth</span><span>36 in</span></div>
+    <div class="spec"><span>Height</span><span>48 in</span></div>
+    <div class="spec"><span>Frame</span><span>kiln-dried hardwood, not knock-down</span></div>
+
+    <iframe id="planner" allow="tools" title="Your staircase"></iframe>
+    <p class="note">Your staircase, embedded from a different origin. This page cannot see inside it and
+      has no account with it. It can only call the one tool that origin chose to expose.</p>
+  </div>
+
+  <aside>
+    <h2>Will it get in?</h2>
+    <p style="margin:.2rem 0 .9rem;font-size:13.5px">Ask the staircase, not the shop. The shop does not
+      know your house and never sees your measurements.</p>
+    <button id="ask" disabled>Checking for your staircase…</button>
+    <div class="verdict" id="verdict"></div>
+    <div class="banner" id="banner">
+      No site tools in this browser. Enable
+      <code>chrome://flags/#enable-webmcp-testing</code> (or <code>edge://flags/…</code>) and restart.
+    </div>
+    <p class="note" id="wiring"></p>
+  </aside>
+</main>
+
+<script>
+const PLANNER_ORIGIN = 'https://elbow-room-sand.vercel.app';
+document.getElementById('planner').src = PLANNER_ORIGIN + '/?embedded=1';
+
+const askBtn  = document.getElementById('ask');
+const verdict = document.getElementById('verdict');
+const wiring  = document.getElementById('wiring');
+
+function show(kind, title, body) {
+  verdict.className = 'verdict show ' + kind;
+  verdict.innerHTML = '<b>' + title + '</b>' + body;
+}
+
+const mc = document.modelContext;
+if (!mc) {
+  document.getElementById('banner').classList.add('show');
+  askBtn.textContent = 'Site tools unavailable';
+} else {
+  // Poll until the embedded origin has registered and exposed its tool.
+  let found = null;
+  const hunt = setInterval(async () => {
+    try {
+      const tools = await mc.getTools({ fromOrigins: [PLANNER_ORIGIN] });
+      found = tools.find(t => t.name === 'check_fit');
+      if (found) {
+        clearInterval(hunt);
+        askBtn.disabled = false;
+        askBtn.textContent = 'Ask my staircase';
+        wiring.textContent =
+          'Reached ' + tools.length + ' tool(s) across the origin boundary from ' +
+          new URL(PLANNER_ORIGIN).host + '.';
+      }
+    } catch (e) { /* not ready yet */ }
+  }, 700);
+  setTimeout(() => clearInterval(hunt), 20000);
+
+  askBtn.onclick = async () => {
+    askBtn.disabled = true;
+    askBtn.textContent = 'Asking…';
+    try {
+      const out = await mc.executeTool(found, JSON.stringify({
+        length_in: 91, depth_in: 36, height_in: 48
+      }));
+      const text = (out?.content?.[0]?.text) ?? String(out);
+      const bad = /does not go/i.test(text);
+      show(bad ? 'no' : 'yes',
+           bad ? 'It will not get up your stairs' : 'It will get up your stairs',
+           text.replace(/\n/g, '<br>'));
+    } catch (e) {
+      show('no', 'The call failed', String(e && e.message ? e.message : e));
+    }
+    askBtn.disabled = false;
+    askBtn.textContent = 'Ask again';
+  };
+}
+</script>
+</body>
+</html>
