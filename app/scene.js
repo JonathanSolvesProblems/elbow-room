@@ -197,6 +197,47 @@ function bindDrag(canvas) {
 }
 
 /**
+ * Does the object actually fit where it is, in three dimensions?
+ *
+ * The plan view's collision test only knows about walls seen from above. It has
+ * no idea the floor is climbing, so an object lying flat and buried in the
+ * treads came back clear. This tests the solid: every corner must be inside the
+ * L in plan, above the tread it stands over, and under the soffit.
+ *
+ * Note that a long object lying flat on a flight genuinely does intersect the
+ * steps. That is not a bug in the test, it is why people carry furniture tilted
+ * along the pitch, and showing it red is the honest answer.
+ */
+function poseIsClear() {
+  if (!objectMesh) return true;
+  const { length: L, width: W, height: H } = M.object;
+  const tilt = (M.upright ? 90 : M.tilt) * Math.PI / 180;
+  const yaw = -M.yaw * Math.PI / 180;
+  const straight = Math.max(1, M.treads - M.winders);
+  const ceiling = straight * M.rise + M.headroom;
+
+  const cx = M.pos.x, cy = M.pos.y;
+  const cz = floorAtInches(cx, cy) +
+    (Math.abs(L * Math.sin(tilt)) + Math.abs(H * Math.cos(tilt))) / 2 + 0.8;
+
+  for (const dx of [-L / 2, 0, L / 2])
+    for (const dy of [-W / 2, 0, W / 2])
+      for (const dz of [-H / 2, H / 2]) {
+        const qx = dx * Math.cos(tilt) - dz * Math.sin(tilt);
+        const qz = dx * Math.sin(tilt) + dz * Math.cos(tilt);
+        const x = cx + qx * Math.cos(yaw) - dy * Math.sin(yaw);
+        const y = cy + qx * Math.sin(yaw) + dy * Math.cos(yaw);
+        const z = cz + qz;
+
+        if (x < -0.5 || y < -0.5) return false;                       // outer walls
+        if (y > M.a + 0.5 && x > M.b + 0.5) return false;             // past the reflex corner
+        if (z < floorAtInches(x, y) - 0.75) return false;             // buried in a tread
+        if (z > floorAtInches(x, y) + ceiling) return false;          // through the soffit
+      }
+  return true;
+}
+
+/**
  * Nudge the object with the keyboard.
  *
  * Dragging is fine for a big move and hopeless for the last inch, which is
@@ -452,7 +493,10 @@ function placeObject() {
   if (objectMesh) { scene.remove(objectMesh); objectMesh.geometry.dispose(); }
 
   const { length: L, width: W, height: H, shape } = M.object;
-  // Red where it is against a wall right now, green where this pose is clear.
+  // Red where the pose actually collides in three dimensions, green where it
+  // is genuinely clear. Computed here, because the plan view cannot see the
+  // treads rising underneath.
+  M.touching = !poseIsClear();
   const colour = M.touching ? 0xe0603f : 0x3fb27f;
   const mat = new THREE.MeshStandardMaterial({
     color: colour, transparent: true, opacity: .55, roughness: .5,

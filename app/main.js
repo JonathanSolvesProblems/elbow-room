@@ -205,8 +205,6 @@ export function boot() {
       // where it is parked. Green while the sidebar says it does not go was the
       // picture contradicting the words again.
       blocked: r.verdict !== 'goes',
-      // Live: is it against a wall at this exact position, right now.
-      touching: view.collides(),
       pos: { ...view.state.pos }, yaw: view.state.angle
     });
 
