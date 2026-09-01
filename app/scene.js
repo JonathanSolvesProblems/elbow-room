@@ -235,27 +235,47 @@ function build() {
     map: photo('/docs/tex-wall.jpg', 7), color: 0x9c9184, roughness: 1, side: THREE.BackSide
   });
 
-  // Treads run down to the floor rather than floating, which is what a flight
-  // actually looks like from the side and what was missing before.
-  const tread = (w, d, topZ, x, y) => {
-    const g = new THREE.BoxGeometry(w, topZ, d);
-    const m = new THREE.Mesh(g, [woodSide, woodSide, woodTop, woodSide, woodSide, woodSide]);
-    m.position.set(x, topZ / 2, y);
-    m.castShadow = m.receiveShadow = true;
-    shaftGroup.add(m);
+  // A real step is a tread slab, a riser behind it, and a stringer carrying
+  // them at each side. Drawing each step as a full-height solid block made a
+  // flight read as a wall with a stepped top rather than as a staircase, which
+  // is what looked disconnected.
+  const TREAD_T = 1.25 * IN;      // slab thickness
+  const RISER_T = 0.75 * IN;      // riser board
+  const NOSE    = 1.0 * IN;       // overhang past the riser
+
+  /** One step. `along` is the travel axis: 'x' for the lower arm, 'y' for the upper. */
+  const step = (along, mid, width, topZ) => {
+    const g = along === 'x'
+      ? new THREE.BoxGeometry(G + NOSE, TREAD_T, width)
+      : new THREE.BoxGeometry(width, TREAD_T, G + NOSE);
+    const t = new THREE.Mesh(g, woodTop);
+    t.position.set(along === 'x' ? mid : width / 2, topZ - TREAD_T / 2,
+                   along === 'x' ? width / 2 : mid);
+    t.castShadow = t.receiveShadow = true;
+    shaftGroup.add(t);
+
+    const rg = along === 'x'
+      ? new THREE.BoxGeometry(RISER_T, R - TREAD_T, width)
+      : new THREE.BoxGeometry(width, R - TREAD_T, RISER_T);
+    const r2 = new THREE.Mesh(rg, woodSide);
+    const back = along === 'x' ? mid + G / 2 : mid + G / 2;
+    r2.position.set(along === 'x' ? back : width / 2, topZ - TREAD_T - (R - TREAD_T) / 2,
+                    along === 'x' ? width / 2 : back);
+    r2.castShadow = r2.receiveShadow = true;
+    shaftGroup.add(r2);
   };
 
   let h = 0;
   for (let i = 0; i < straight; i++) {
     const x = B + (straight - i - 0.5) * G;
-    tread(G, A, h + R, x, A / 2);
+    step('x', x, A, h + R);
     h += R;
   }
+  // Winders: three pie treads sharing the 90 degrees, each ray clipped where it
+  // leaves the turn square so they meet both walls instead of punching through.
   for (let i = 0; i < winders; i++) {
     const t0 = Math.PI + (i / winders) * Math.PI / 2;
     const t1 = Math.PI + ((i + 1) / winders) * Math.PI / 2;
-    // Clip each ray where it leaves the turn square. A single radius for all
-    // three overshot the walls and left the wedges distorted and detached.
     const edge = (ang) => {
       const cx = Math.cos(ang), cy = Math.sin(ang), k = [];
       if (cx < -1e-6) k.push(B / -cx);
@@ -265,31 +285,21 @@ function build() {
     };
     const p0 = edge(t0), p1 = edge(t1);
     const sh = new THREE.Shape();
-    sh.moveTo(B, A);
-    sh.lineTo(p0[0], p0[1]);
-    // Follow the corner so the fan meets both walls squarely.
-    // When a wedge's two rays land on different walls it has to travel round
-    // the outer corner. This test was inverted, so the middle wedge cut the
-    // corner off and left a triangular hole between the two flights.
+    sh.moveTo(B, -A);
+    sh.lineTo(p0[0], -p0[1]);
+    // Two rays on different walls must travel round the outer corner, or the
+    // wedge cuts it off and leaves a hole between the flights.
     if (Math.abs(p0[0]) < 1e-4 && Math.abs(p1[1]) < 1e-4) sh.lineTo(0, 0);
-    sh.lineTo(p1[0], p1[1]);
+    sh.lineTo(p1[0], -p1[1]);
     sh.closePath();
+
     const g = new THREE.ExtrudeGeometry(sh, { depth: h + R, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
     const m = new THREE.Mesh(g, [woodTop, woodSide]);
-    m.position.y = 0;               // grows up from the floor to its own tread
     m.castShadow = m.receiveShadow = true;
     shaftGroup.add(m);
     h += R;
   }
-  for (let i = 0; i < straight; i++) {
-    const y = A + (i + 0.5) * G;
-    tread(B, G, h + R, B / 2, y);
-    h += R;
-  }
-
-  const ext = Math.max(A, B) + straight * G;
-  const top = h + headroom * IN;
 
   // The shaft is L-shaped, so the walls must be too. Wrapping it in a box put
   // an outer wall where the flights run, and left the box's empty corner walled
