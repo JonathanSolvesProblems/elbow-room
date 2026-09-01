@@ -31,6 +31,17 @@ export const state = {
 export function onChange(fn) { state.listeners.push(fn); }
 function emit() { for (const fn of state.listeners) fn(state); }
 
+/**
+ * The 3D clearance verdict, pushed in from the solid view. Set without emitting,
+ * because it is a consequence of a move rather than a new one, and emitting here
+ * would loop.
+ */
+export function setClear(clear) {
+  if (state.clear === clear) return;
+  state.clear = clear;
+  draw();
+}
+
 export function update(patch) {
   Object.assign(state, patch);
   if (patch.object) reframe();
@@ -193,7 +204,10 @@ export function draw() {
   // length and depth. A water heater is carried upright, so its footprint is a
   // 24 inch circle rather than a 60 inch rectangle, and drawing the rectangle
   // made the picture disagree with the maths.
-  const bad = collides();
+  // Prefer the solid view's verdict, which knows the floor is climbing. The
+  // plan's own test only sees walls from above, so on its own it called a couch
+  // buried in the treads clear.
+  const bad = state.clear === undefined ? collides() : !state.clear;
   const cs = corners();
   outline(ctx, cs, state.object.shape, state.object.upright);
   ctx.fillStyle = bad ? css('--badfill', 'rgba(163,52,31,.22)') : css('--okfill', 'rgba(28,107,63,.18)');

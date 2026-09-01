@@ -49,6 +49,10 @@ export function setMode(m) {
   return mode;
 }
 
+/** The 3D clearance verdict for the current pose. The plan view uses this too,
+ *  so the two drawings can never disagree about the same position. */
+export function isClear() { return !M.touching; }
+
 let onMove = null;
 /** Tell the rest of the app when someone drags the object in 3D. */
 export function onObjectMove(fn) { onMove = fn; }

@@ -207,6 +207,8 @@ export function boot() {
       blocked: r.verdict !== 'goes',
       pos: { ...view.state.pos }, yaw: view.state.angle
     });
+    // One clearance test drives both drawings.
+    view.setClear(solid.isClear());
 
     const prov = document.getElementById('prov');
     prov.innerHTML =
