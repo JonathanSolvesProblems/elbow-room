@@ -357,6 +357,10 @@ export function boot() {
   const mine = loadMine();
   const carried = loadObject();
   if (mine || carried) app.sync();
+  // A newly arrived object has to be parked for its own size. Without this it
+  // sat where the previous object had been parked, so Reset, which parks
+  // correctly, appeared to move it somewhere new.
+  if (carried) view.park();
   if (carried) {
     const el = document.getElementById('mine');
     if (el) {
