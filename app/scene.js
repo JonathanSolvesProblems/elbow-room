@@ -291,24 +291,31 @@ function build() {
   const ext = Math.max(A, B) + straight * G;
   const top = h + headroom * IN;
 
-  // The shaft footprint. The L runs from the outer corner at the origin out
-  // along both arms, so floor and walls are sized to exactly that. Padding the
-  // box out on every side is what left the walls standing off from the stairs
-  // instead of meeting their sides.
+  // The shaft is L-shaped, so the walls must be too. Wrapping it in a box put
+  // an outer wall where the flights run, and left the box's empty corner walled
+  // off around nothing. This extrudes the actual footprint: outer walls down
+  // both arms, and the two inner walls that form the reflex corner.
   const spanX = B + straight * G, spanY = A + straight * G;
 
-  const slab = new THREE.Mesh(
-    new THREE.BoxGeometry(spanX, .06, spanY),
-    new THREE.MeshStandardMaterial({ color: 0x6d6055, roughness: .95 })
-  );
-  slab.position.set(spanX / 2, -.03, spanY / 2);
+  const foot = new THREE.Shape();          // y negated: rotateX(-90) maps v to -z
+  foot.moveTo(0, 0);
+  foot.lineTo(spanX, 0);
+  foot.lineTo(spanX, -A);
+  foot.lineTo(B, -A);
+  foot.lineTo(B, -spanY);
+  foot.lineTo(0, -spanY);
+  foot.closePath();
+
+  const slabGeo = new THREE.ExtrudeGeometry(foot, { depth: .06, bevelEnabled: false });
+  slabGeo.rotateX(-Math.PI / 2);
+  const slab = new THREE.Mesh(slabGeo, new THREE.MeshStandardMaterial({ color: 0x6d6055, roughness: .95 }));
+  slab.position.y = -.06;
   slab.receiveShadow = true;
   shaftGroup.add(slab);
 
-  // The room, as an inside-out box. Back faces only, so from outside you see
-  // straight in and from within you are surrounded.
-  const room = new THREE.Mesh(new THREE.BoxGeometry(spanX, top, spanY), wallMat);
-  room.position.set(spanX / 2, top / 2 - .03, spanY / 2);
+  const wallGeo = new THREE.ExtrudeGeometry(foot, { depth: top, bevelEnabled: false });
+  wallGeo.rotateX(-Math.PI / 2);
+  const room = new THREE.Mesh(wallGeo, wallMat);
   room.receiveShadow = true;
   shaftGroup.add(room);
 
