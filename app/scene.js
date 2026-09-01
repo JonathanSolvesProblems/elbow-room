@@ -219,6 +219,7 @@ function poseIsClear() {
   const yaw = -M.yaw * Math.PI / 180;
   const straight = Math.max(1, M.treads - M.winders);
   const ceiling = straight * M.rise + M.headroom;
+  const spanX = M.b + straight * M.going, spanY = M.a + straight * M.going;
 
   const cx = M.pos.x, cy = M.pos.y;
   const cz = floorAtInches(cx, cy) +
@@ -234,6 +235,7 @@ function poseIsClear() {
         const z = cz + qz;
 
         if (x < -0.5 || y < -0.5) return false;                       // outer walls
+        if (x > spanX + 0.5 || y > spanY + 0.5) return false;         // out past the ends
         if (y > M.a + 0.5 && x > M.b + 0.5) return false;             // past the reflex corner
         if (z < floorAtInches(x, y) - 0.75) return false;             // buried in a tread
         if (z > floorAtInches(x, y) + ceiling) return false;          // through the soffit
