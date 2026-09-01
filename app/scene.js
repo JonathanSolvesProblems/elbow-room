@@ -40,6 +40,10 @@ function photo(url, repeat = 1) {
 export function attach(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
 
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
@@ -51,10 +55,21 @@ export function attach(canvas) {
   controls.maxDistance = 30;
   controls.maxPolarAngle = Math.PI * 0.495;   // never go under the floor
 
-  scene.add(new THREE.HemisphereLight(0xfff4e2, 0x30281f, 1.15));
-  const key = new THREE.DirectionalLight(0xffffff, 1.5);
-  key.position.set(3, 6, 2.5);
+  // A stairwell is lit from above and from the doorway. Two sources plus a
+  // warm bounce reads as a room rather than as a diagram.
+  scene.add(new THREE.HemisphereLight(0xffeedd, 0x2a231c, .85));
+  const key = new THREE.DirectionalLight(0xfff3e0, 2.2);
+  key.position.set(2.6, 5.2, 2.2);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.near = .5; key.shadow.camera.far = 30;
+  key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+  key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
+  key.shadow.bias = -0.0012;
   scene.add(key);
+  const fill = new THREE.DirectionalLight(0xbfd4ff, .35);
+  fill.position.set(-3, 2.5, -2);
+  scene.add(fill);
 
   build();
   resize();
@@ -106,70 +121,93 @@ function build() {
   const wallMat = new THREE.MeshStandardMaterial({ map: photo('/docs/tex-wall.jpg', 4), roughness: 1,
                                                    side: THREE.BackSide });
 
-  const tread = (w, d, h, x, y, z) => {
-    const g = new THREE.BoxGeometry(w, R, d);
+  // Treads run down to the floor rather than floating, which is what a flight
+  // actually looks like from the side and what was missing before.
+  const tread = (w, d, topZ, x, y) => {
+    const g = new THREE.BoxGeometry(w, topZ, d);
     const m = new THREE.Mesh(g, [woodSide, woodSide, woodTop, woodSide, woodSide, woodSide]);
-    m.position.set(x, z, y);
+    m.position.set(x, topZ / 2, y);
+    m.castShadow = m.receiveShadow = true;
     shaftGroup.add(m);
   };
 
   let h = 0;
-  // lower arm, climbing toward the turn
   for (let i = 0; i < straight; i++) {
     const x = B + (straight - i - 0.5) * G;
-    tread(G, A, R, x, A / 2, h + R / 2);
+    tread(G, A, h + R, x, A / 2);
     h += R;
   }
-  // winders: wedges about the inner corner
   for (let i = 0; i < winders; i++) {
     const t0 = Math.PI + (i / winders) * Math.PI / 2;
     const t1 = Math.PI + ((i + 1) / winders) * Math.PI / 2;
-    const s = new THREE.Shape();
-    s.moveTo(B, A);
+    const sh = new THREE.Shape();
+    sh.moveTo(B, A);
     const rad = Math.hypot(B, A) * 1.02;
-    s.lineTo(B + Math.cos(t0) * rad, A + Math.sin(t0) * rad);
-    s.lineTo(B + Math.cos(t1) * rad, A + Math.sin(t1) * rad);
-    s.closePath();
-    const g = new THREE.ExtrudeGeometry(s, { depth: R, bevelEnabled: false });
+    sh.lineTo(B + Math.cos(t0) * rad, A + Math.sin(t0) * rad);
+    sh.lineTo(B + Math.cos(t1) * rad, A + Math.sin(t1) * rad);
+    sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth: h + R, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, woodTop);
+    const m = new THREE.Mesh(g, [woodTop, woodSide]);
     m.position.y = h + R;
+    m.castShadow = m.receiveShadow = true;
     shaftGroup.add(m);
     h += R;
   }
-  // upper arm, climbing away
   for (let i = 0; i < straight; i++) {
     const y = A + (i + 0.5) * G;
-    tread(B, G, R, B / 2, y, h + R / 2);
+    tread(B, G, h + R, B / 2, y);
     h += R;
   }
 
-  // Outer walls
   const ext = Math.max(A, B) + straight * G;
   const top = h + headroom * IN;
-  const w1 = new THREE.Mesh(new THREE.PlaneGeometry(ext + B, top), wallMat);
-  w1.position.set((ext + B) / 2 - B, top / 2, 0);
-  shaftGroup.add(w1);
-  const w2 = new THREE.Mesh(new THREE.PlaneGeometry(ext + A, top), wallMat);
-  w2.rotation.y = Math.PI / 2;
-  w2.position.set(0, top / 2, (ext + A) / 2 - A);
-  shaftGroup.add(w2);
 
-  // The soffit over the turn: the ceiling that stops you tilting
-  const soffitH = straight * R + headroom * IN;
-  const sof = new THREE.Mesh(
-    new THREE.BoxGeometry(B, 0.03, A),
-    new THREE.MeshStandardMaterial({ color: 0xa3341f, transparent: true, opacity: .45, roughness: .9 })
+  // Floor slab at the bottom of the flight.
+  const slab = new THREE.Mesh(
+    new THREE.BoxGeometry(ext + B + .6, .06, ext + A + .6),
+    new THREE.MeshStandardMaterial({ color: 0x6d6055, roughness: .95 })
   );
-  sof.position.set(B / 2, soffitH, A / 2);
-  shaftGroup.add(sof);
+  slab.position.set((ext + B) / 2 - B, -.03, (ext + A) / 2 - A);
+  slab.receiveShadow = true;
+  shaftGroup.add(slab);
 
-  // Inner corner: the thing that stops everything
+  // The room, as an inside-out box. Back faces only, so from outside you see
+  // straight in and from within you are surrounded.
+  const room = new THREE.Mesh(
+    new THREE.BoxGeometry(ext + B + .6, top + .4, ext + A + .6),
+    wallMat
+  );
+  room.position.set((ext + B) / 2 - B, (top + .4) / 2 - .05, (ext + A) / 2 - A);
+  room.receiveShadow = true;
+  shaftGroup.add(room);
+
+  // The bulkhead over the turn: a solid box down to the soffit line, not a
+  // floating plate on a stick.
+  const soffitH = straight * R + headroom * IN;
+  const bulk = new THREE.Mesh(
+    new THREE.BoxGeometry(B, top - soffitH + .4, A),
+    new THREE.MeshStandardMaterial({ color: 0xb8ada0, roughness: .95 })
+  );
+  bulk.position.set(B / 2, soffitH + (top - soffitH + .4) / 2, A / 2);
+  bulk.castShadow = bulk.receiveShadow = true;
+  shaftGroup.add(bulk);
+
+  // Its underside, marked, because that edge is the thing that gouges.
+  const face = new THREE.Mesh(
+    new THREE.BoxGeometry(B, .012, A),
+    new THREE.MeshStandardMaterial({ color: 0xa3341f, roughness: .8 })
+  );
+  face.position.set(B / 2, soffitH, A / 2);
+  shaftGroup.add(face);
+
+  // Inner corner post.
   const post = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.02, 0.02, soffitH, 12),
-    new THREE.MeshStandardMaterial({ color: 0xa3341f })
+    new THREE.CylinderGeometry(.022, .022, soffitH, 14),
+    new THREE.MeshStandardMaterial({ color: 0x8d5a3a, roughness: .7 })
   );
   post.position.set(B, soffitH / 2, A);
+  post.castShadow = true;
   shaftGroup.add(post);
 
   scene.add(shaftGroup);
@@ -197,6 +235,7 @@ function placeObject() {
     : new THREE.BoxGeometry(L * IN, H * IN, W * IN);
 
   objectMesh = new THREE.Mesh(geo, mat);
+  objectMesh.castShadow = true;
   objectMesh.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
     new THREE.LineBasicMaterial({ color: colour })
