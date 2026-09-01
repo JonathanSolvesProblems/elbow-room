@@ -360,8 +360,11 @@ function build() {
   // Winders: three pie treads sharing the 90 degrees, each ray clipped where it
   // leaves the turn square so they meet both walls instead of punching through.
   for (let i = 0; i < winders; i++) {
-    const t0 = Math.PI + (i / winders) * Math.PI / 2;
-    const t1 = Math.PI + ((i + 1) / winders) * Math.PI / 2;
+    // The fan sweeps 180 to 270 degrees, so its FIRST wedge lies against the
+    // upper arm and its last against the lower. Heights climb from the lower
+    // arm, so the order has to be reversed or the turn climbs backwards.
+    const t0 = Math.PI + ((winders - 1 - i) / winders) * Math.PI / 2;
+    const t1 = Math.PI + ((winders - i) / winders) * Math.PI / 2;
     const edge = (ang) => {
       const cx = Math.cos(ang), cy = Math.sin(ang), k = [];
       if (cx < -1e-6) k.push(B / -cx);
