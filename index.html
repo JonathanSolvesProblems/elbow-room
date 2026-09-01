@@ -42,10 +42,23 @@
     .hint { display:none; }
   }
 
-  .stage { position:relative; }
-  canvas { width:100%; height:100%; min-height:60vh; display:block; touch-action:none; }
-  .hint { position:absolute; left:1rem; bottom:1rem; color:var(--mut); font-size:12.5px;
-          background:var(--card); border:1px solid var(--line); border-radius:7px; padding:.4rem .6rem; }
+  .stage { position:relative; display:grid; gap:1px; background:var(--line); min-height:62vh; }
+  .stage[data-view="both"] { grid-template-rows:1fr 1fr; }
+  @media (min-width:1180px) { .stage[data-view="both"] { grid-template-rows:none; grid-template-columns:1fr 1fr; } }
+  .stage[data-view="plan"] [data-pane="solid"],
+  .stage[data-view="solid"] [data-pane="plan"] { display:none; }
+  .pane { position:relative; background:var(--bg); min-height:0; overflow:hidden; }
+  .panelabel { position:absolute; top:.7rem; left:.9rem; z-index:2; font-size:10.5px;
+               text-transform:uppercase; letter-spacing:.09em; color:var(--mut); pointer-events:none; }
+  .tabs { position:absolute; top:.6rem; right:.7rem; z-index:5; display:flex; gap:.15rem;
+          background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.15rem; }
+  .tabs button { font:inherit; font-size:12px; padding:.28rem .7rem; border:0; border-radius:6px;
+                 background:transparent; color:var(--mut); cursor:pointer; margin:0; }
+  .tabs button[aria-selected="true"] { background:var(--bg); color:var(--fg); font-weight:600; }
+  canvas { width:100%; height:100%; display:block; touch-action:none; }
+  .hint { position:absolute; left:.9rem; bottom:.9rem; color:var(--mut); font-size:12px;
+          background:var(--card); border:1px solid var(--line); border-radius:7px; padding:.35rem .55rem;
+          pointer-events:none; }
 
   aside { border-left:1px solid var(--line); padding:1.5rem 1.25rem 3rem; background:var(--card); }
   @media (max-width:860px) { aside { border-left:0; border-top:1px solid var(--line); } }
@@ -104,14 +117,20 @@
 </nav>
 <div class="wrap">
   <div class="stage">
-    <div class="pane">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-view="plan" aria-selected="true">Plan</button>
+      <button role="tab" data-view="solid">3D</button>
+      <button role="tab" data-view="both">Both</button>
+    </div>
+    <div class="pane" data-pane="plan">
       <span class="panelabel">Plan · looking down on the turn</span>
       <canvas id="cv"></canvas>
       <div class="hint">Drag to move. Scroll to rotate.</div>
     </div>
-    <div class="pane">
-      <span class="panelabel">The shaft · treads, winders and the soffit</span>
-      <canvas id="iso"></canvas>
+    <div class="pane" data-pane="solid">
+      <span class="panelabel">The shaft · drag to orbit, scroll to zoom</span>
+      <canvas id="solid"></canvas>
+      <div class="hint">Geometry from the tape. Surfaces from the photographs.</div>
     </div>
   </div>
 
