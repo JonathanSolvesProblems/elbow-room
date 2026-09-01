@@ -20,6 +20,14 @@
       --okfill:rgba(108,196,141,.16); --badfill:rgba(224,138,114,.20);
     }
   }
+
+  .hub { display:flex; gap:.15rem; align-items:center; flex-wrap:wrap;
+         border-bottom:1px solid var(--line); background:var(--card); padding:.45rem .8rem;
+         font-size:12.5px; position:sticky; top:0; z-index:30; }
+  .hub a { color:var(--mut); text-decoration:none; padding:.3rem .55rem; border-radius:6px; }
+  .hub a:hover { color:var(--fg); background:var(--bg); }
+  .hub a[aria-current] { color:var(--fg); font-weight:600; background:var(--bg); }
+  body.embedded .hub { display:none; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
@@ -79,6 +87,13 @@
 </style>
 </head>
 <body>
+<nav class="hub">
+  <a href="/" data-k="plan" aria-current="page">Planner</a>
+  <a href="/measure/" data-k="measure">Measure yours</a>
+  <a href="https://halliwell-and-co.vercel.app" data-k="shop">The shop &middot; cross-origin</a>
+  <a href="/probe/" data-k="probe">Probe</a>
+  <a href="https://github.com/JonathanSolvesProblems/elbow-room" data-k="repo">Code</a>
+</nav>
 <div class="wrap">
   <div class="stage">
     <div class="pane">

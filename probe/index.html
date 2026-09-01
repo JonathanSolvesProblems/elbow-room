@@ -10,10 +10,18 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg:#16150f; --fg:#eceae4; --mut:#9a948a; --line:#302d26; --ok:#6cc48d; --no:#e08a72; --card:#1e1c16; }
   }
+
+  .hub { display:flex; gap:.15rem; align-items:center; flex-wrap:wrap;
+         border-bottom:1px solid var(--line); background:var(--card); padding:.45rem .8rem;
+         font-size:12.5px; position:sticky; top:0; z-index:30; }
+  .hub a { color:var(--mut); text-decoration:none; padding:.3rem .55rem; border-radius:6px; }
+  .hub a:hover { color:var(--fg); background:var(--bg); }
+  .hub a[aria-current] { color:var(--fg); font-weight:600; background:var(--bg); }
+  body.embedded .hub { display:none; }
   * { box-sizing: border-box; }
-  body { margin:0; padding:2rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
+  body { margin:0; padding:0 0 4rem; background:var(--bg); color:var(--fg);
          font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
-  main { max-width: 46rem; margin: 0 auto; }
+  main { max-width: 46rem; margin: 0 auto; padding: 2rem 1.25rem 0; }
   h1 { font-size:1.4rem; margin:0 0 .25rem; letter-spacing:-.01em; }
   .sub { color:var(--mut); margin:0 0 1.75rem; }
   section { border:1px solid var(--line); border-radius:10px; background:var(--card);
@@ -38,6 +46,13 @@
 </style>
 </head>
 <body>
+<nav class="hub">
+  <a href="/" data-k="plan">Planner</a>
+  <a href="/measure/" data-k="measure">Measure yours</a>
+  <a href="https://halliwell-and-co.vercel.app" data-k="shop">The shop &middot; cross-origin</a>
+  <a href="/probe/" data-k="probe" aria-current="page">Probe</a>
+  <a href="https://github.com/JonathanSolvesProblems/elbow-room" data-k="repo">Code</a>
+</nav>
 <main>
   <h1>WebMCP probe</h1>
   <p class="sub">Not the product. This page exists to find out how site tools actually behave in a

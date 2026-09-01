@@ -16,6 +16,14 @@
     :root { --bg:#15140f; --fg:#ecebe5; --mut:#98928a; --line:#2e2b24; --card:#1d1b16;
             --pinch:#e08a72; --ok:#6cc48d; --accent:#6cc48d; }
   }
+
+  .hub { display:flex; gap:.15rem; align-items:center; flex-wrap:wrap;
+         border-bottom:1px solid var(--line); background:var(--card); padding:.45rem .8rem;
+         font-size:12.5px; position:sticky; top:0; z-index:30; }
+  .hub a { color:var(--mut); text-decoration:none; padding:.3rem .55rem; border-radius:6px; }
+  .hub a:hover { color:var(--fg); background:var(--bg); }
+  .hub a[aria-current] { color:var(--fg); font-weight:600; background:var(--bg); }
+  body.embedded .hub { display:none; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
@@ -64,6 +72,13 @@
 </style>
 </head>
 <body>
+<nav class="hub">
+  <a href="/" data-k="plan">Planner</a>
+  <a href="/measure/" data-k="measure" aria-current="page">Measure yours</a>
+  <a href="https://halliwell-and-co.vercel.app" data-k="shop">The shop &middot; cross-origin</a>
+  <a href="/probe/" data-k="probe">Probe</a>
+  <a href="https://github.com/JonathanSolvesProblems/elbow-room" data-k="repo">Code</a>
+</nav>
 <div class="wrap">
   <div class="stage">
     <div id="scrub" hidden style="width:100%;max-width:60rem;margin-bottom:.6rem">
@@ -74,7 +89,8 @@
       <strong>Drop a photo or a video of your stairwell</strong>
       Or click to choose one. A short clip is often easier than a good still: scrub to the
       clearest frame and measure on that.<br><br>
-      It is read in this page and never uploaded anywhere.
+      It is read in this page and never uploaded anywhere.<br><br>
+      <button id="example" style="margin:0">No photo handy? Use the real staircase</button>
       <input type="file" id="file" accept="image/*,video/*" hidden>
     </div>
     <canvas id="cv" hidden></canvas>
@@ -147,7 +163,22 @@ const saved = {};            // field -> inches
 
 /* ---------- photo in, entirely locally ---------- */
 
-drop.onclick = () => file.click();
+drop.onclick = e => { if (e.target.id !== 'example') file.click(); };
+
+// A judge will not have a stairwell photo to hand, so ship one. This is the
+// turn the whole project is about, tape included.
+document.getElementById('example').onclick = e => {
+  e.stopPropagation();
+  const img = new Image();
+  img.onload = () => {
+    S.image = img;
+    const max = 1100, k = Math.min(1, max / Math.max(img.width, img.height));
+    cv.width = img.width * k; cv.height = img.height * k;
+    cv.hidden = false; drop.hidden = true;
+    draw(); steps();
+  };
+  img.src = '/docs/stairs-width.jpg';
+};
 drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; };
 drop.ondragleave = () => drop.style.borderColor = '';
 drop.ondrop = e => { e.preventDefault(); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); };
