@@ -57,6 +57,11 @@
                  background:transparent; color:var(--mut); cursor:pointer; margin:0; }
   .tabs button[aria-selected="true"] { background:var(--bg); color:var(--fg); font-weight:600; }
   canvas { width:100%; height:100%; display:block; touch-action:none; }
+  .viewctl { position:absolute; right:.7rem; bottom:.9rem; z-index:5; display:flex; gap:.2rem;
+             background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.2rem; }
+  .viewctl button { font:inherit; font-size:13px; min-width:2rem; padding:.3rem .45rem; margin:0;
+                    border:0; border-radius:6px; background:transparent; color:var(--mut); cursor:pointer; }
+  .viewctl button:hover { background:var(--bg); color:var(--fg); }
   .hint { position:absolute; left:.9rem; bottom:.9rem; color:var(--mut); font-size:12px;
           background:var(--card); border:1px solid var(--line); border-radius:7px; padding:.35rem .55rem;
           pointer-events:none; }
@@ -131,7 +136,14 @@
     <div class="pane" data-pane="solid">
       <span class="panelabel">The shaft · drag to orbit, scroll to zoom</span>
       <canvas id="solid"></canvas>
-      <div class="hint">Geometry from the tape. Surfaces from the photographs.</div>
+      <div class="viewctl">
+        <button data-cam="left" title="Rotate left">&#8630;</button>
+        <button data-cam="right" title="Rotate right">&#8631;</button>
+        <button data-cam="in" title="Zoom in">+</button>
+        <button data-cam="out" title="Zoom out">&minus;</button>
+        <button data-cam="reset" title="Reset view">Reset</button>
+      </div>
+      <div class="hint">Drag the couch to carry it. Drag empty space to orbit.</div>
     </div>
   </div>
 
@@ -195,6 +207,10 @@ function setView(v) {
   window.dispatchEvent(new Event('resize'));
 }
 tabs.forEach(b => b.onclick = () => setView(b.dataset.view));
+
+document.querySelectorAll('.viewctl button').forEach(b => {
+  b.onclick = () => window.dispatchEvent(new CustomEvent('elbowroom:camera', { detail: b.dataset.cam }));
+});
 setView(window.innerWidth >= 1180 ? 'both' : 'plan');
 </script>
 </body>

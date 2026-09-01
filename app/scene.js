@@ -55,9 +55,11 @@ export function attach(canvas) {
   controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.minDistance = 0.8;
-  controls.maxDistance = 30;
-  controls.maxPolarAngle = Math.PI * 0.495;   // never go under the floor
+  controls.minDistance = 0.9;
+  controls.maxDistance = 14;                  // cannot wander off into the void
+  controls.maxPolarAngle = Math.PI * 0.48;    // never go under the floor
+  controls.minPolarAngle = 0.15;              // nor straight down from above
+  controls.enablePan = false;                 // the target stays on the turn
 
   // A stairwell is lit from above and from the doorway. Two sources plus a
   // warm bounce reads as a room rather than as a diagram.
@@ -77,6 +79,17 @@ export function attach(canvas) {
 
   build();
   bindDrag(canvas);
+  window.addEventListener('elbowroom:camera', e => {
+    const sph = new THREE.Spherical().setFromVector3(
+      camera.position.clone().sub(controls.target));
+    if (e.detail === 'left')  sph.theta += Math.PI / 8;
+    if (e.detail === 'right') sph.theta -= Math.PI / 8;
+    if (e.detail === 'in')    sph.radius = Math.max(controls.minDistance, sph.radius * 0.8);
+    if (e.detail === 'out')   sph.radius = Math.min(controls.maxDistance, sph.radius * 1.25);
+    if (e.detail === 'reset') return frameAll();
+    camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(sph));
+    controls.update();
+  });
   resize();
   window.addEventListener('resize', resize);
   loop();
@@ -199,11 +212,22 @@ function build() {
   for (let i = 0; i < winders; i++) {
     const t0 = Math.PI + (i / winders) * Math.PI / 2;
     const t1 = Math.PI + ((i + 1) / winders) * Math.PI / 2;
+    // Clip each ray where it leaves the turn square. A single radius for all
+    // three overshot the walls and left the wedges distorted and detached.
+    const edge = (ang) => {
+      const cx = Math.cos(ang), cy = Math.sin(ang), k = [];
+      if (cx < -1e-6) k.push(B / -cx);
+      if (cy < -1e-6) k.push(A / -cy);
+      const d = k.length ? Math.min(...k) : Math.hypot(B, A);
+      return [B + cx * d, A + cy * d];
+    };
+    const p0 = edge(t0), p1 = edge(t1);
     const sh = new THREE.Shape();
     sh.moveTo(B, A);
-    const rad = Math.hypot(B, A) * 1.02;
-    sh.lineTo(B + Math.cos(t0) * rad, A + Math.sin(t0) * rad);
-    sh.lineTo(B + Math.cos(t1) * rad, A + Math.sin(t1) * rad);
+    sh.lineTo(p0[0], p0[1]);
+    // Follow the corner so the fan meets both walls squarely.
+    if (p0[0] > 1e-6 && p1[1] > 1e-6 && Math.abs(p0[1]) < 1e-6 && Math.abs(p1[0]) < 1e-6) sh.lineTo(0, 0);
+    sh.lineTo(p1[0], p1[1]);
     sh.closePath();
     const g = new THREE.ExtrudeGeometry(sh, { depth: h + R, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
