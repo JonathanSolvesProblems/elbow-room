@@ -11,7 +11,7 @@
 
 /** 91 -> 7'7"  ·  41.5 -> 3'5½"  ·  6 -> 6" */
 export function ft(inches, { precision = 2 } = {}) {
-  if (!isFinite(inches)) return '—';
+  if (!isFinite(inches)) return 'n/a';
   const neg = inches < 0;
   const v = Math.abs(inches);
   const feet = Math.floor(v / 12);
