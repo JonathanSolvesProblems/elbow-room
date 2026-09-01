@@ -116,6 +116,7 @@
     <div class="bar"><i id="loadBar"></i></div>
     <ul class="steps2" id="loadSteps"></ul>
     <div id="loadActions" hidden style="margin-top:1rem">
+      <button id="loadDecode" hidden class="primary" style="width:auto;margin:.3rem .3rem 0 0"></button>
       <button id="loadPick">Choose another file</button>
       <button id="loadClose">Close</button>
     </div>
@@ -234,7 +235,7 @@ const S = createSession();
 const Loader = {
   el: document.getElementById('loading'),
   steps: [],
-  show(title, steps) {
+  show(title, steps, guardMs = 45000) {
     // Nothing here is allowed to hang. If a stage stalls, say so and get out of
     // the way rather than leaving a progress bar sitting there forever.
     clearTimeout(this._guard);
@@ -244,7 +245,7 @@ const Loader = {
       if (this.el.classList.contains('on')) {
         this.fail('That is taking longer than expected. The frame is on screen, carry on with it.');
       }
-    }, 45000);
+    }, guardMs);
     this.steps = steps;
     document.getElementById('loadTitle').textContent = title;
     document.getElementById('loadSteps').innerHTML =
@@ -273,7 +274,7 @@ const Loader = {
    * rather than as an answer. So it stays, it says what to do next, and it
    * closes when it is dismissed.
    */
-  fail(msg) {
+  fail(msg, offer) {
     clearTimeout(this._guard);
     document.getElementById('loadTitle').textContent = 'That file will not open here';
     document.getElementById('loadStage').textContent = msg;
@@ -281,6 +282,11 @@ const Loader = {
     document.getElementById('loadBar').style.background = 'var(--pinch)';
     document.getElementById('loadSteps').innerHTML = '';
     document.getElementById('loadActions').hidden = false;
+    // A way out, where there is one. The browser lacking a codec is not the end
+    // of the road: the page can fetch one and do the work itself.
+    const d = document.getElementById('loadDecode');
+    d.hidden = !offer;
+    if (offer) { d.textContent = offer.label; d.onclick = offer.run; }
     this.el.classList.add('on', 'failed');
     // Leave it behind in the sidebar too, so the reason survives the dismissal.
     const a = document.getElementById('advice');
@@ -603,12 +609,174 @@ function load(f) {
 let video = null;
 const CODEC_NAME = { hevc: 'HEVC, also called H.265', av1: 'AV1', vp9: 'VP9', h264: 'H.264' };
 
+/* ---------------------------------------------------------------------- *
+ * Bringing our own decoder.
+ *
+ * Both phones in this house record HEVC and Edge on this machine has no HEVC
+ * decoder, so the browser opens the container and hands back nothing. That is
+ * the single most likely way this page fails for a real person, because it is
+ * the default setting on the two most common cameras in the world.
+ *
+ * The obvious fix is to upload the clip and transcode it on a server. This page
+ * says, at the top, that nothing you give it leaves your browser, and that is
+ * the most interesting thing about it. So the file stays and the decoder moves
+ * instead: ffmpeg compiled to WebAssembly, fetched once, on request, and run
+ * here. It is 32 MB, which is why it is offered rather than assumed.
+ * ---------------------------------------------------------------------- */
+
+const WASM = {
+  // The ESM build, deliberately. Its worker is a module worker, which cannot
+  // call importScripts, so it needs the ESM core with a default export; handing
+  // it the UMD core is what produced "Cannot find module". Served from this
+  // origin so the worker resolves, and so nothing here depends on a CDN staying
+  // up through judging.
+  lib:  '/vendor/ffmpeg/esm/index.js',
+  core: '/vendor/ffmpeg/core/ffmpeg-core.js',
+  wasm: '/vendor/ffmpeg/core/ffmpeg-core.wasm'
+};
+
+
+/** Pull it through the cache, counting bytes, because 32 MB deserves a bar. */
+async function prefetch(url, onBytes) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(res.status + ' fetching the decoder');
+  const total = Number(res.headers.get('content-length')) || 0;
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    if (onBytes) onBytes(got, total);
+  }
+  return got;
+}
+
+let ffmpegReady = null;
+function getFfmpeg() {
+  if (ffmpegReady) return ffmpegReady;
+  ffmpegReady = (async () => {
+    Loader.at(0, 3, 'Fetching a decoder. It runs in this page, like everything else here.');
+    const { FFmpeg } = await import(WASM.lib);
+    // Warm the 32 MB binary through the cache first, purely so there is a
+    // progress bar instead of a minute of silence. The loader then finds it
+    // already there.
+    await prefetch(WASM.wasm, (got, total) => {
+      const mb = total || 32e6;
+      Loader.at(0, 3 + Math.min(1, got / mb) * 45,
+        `Decoder ${(got / 1e6).toFixed(0)} of ${(mb / 1e6).toFixed(0)} MB`);
+    });
+    const abs = u => new URL(u, location.href).href;
+    const ff = new FFmpeg();
+    await ff.load({ coreURL: abs(WASM.core), wasmURL: abs(WASM.wasm) });
+    return ff;
+  })().catch(e => { ffmpegReady = null; throw e; });
+  return ffmpegReady;
+}
+
+/** Twelve frames spread across the clip, decoded here, at a size worth scoring. */
+async function framesViaWasm(f) {
+  const ff = await getFfmpeg();
+  let dur = 0;
+  const times = [];
+  const onLog = ({ message }) => {
+    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(message || '');
+    if (m) dur = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
+    // Keyframes are not evenly spaced, so the only honest timestamp is the one
+    // the decoder reports for the frame it actually emitted.
+    const t = /pts_time:\s*(\d+(?:\.\d+)?)/.exec(message || '');
+    if (t) times.push(parseFloat(t[1]));
+  };
+  ff.on('log', onLog);
+
+  Loader.at(1, 52, `Reading ${(f.size / 1e6).toFixed(0)} MB`);
+  await breathe();
+  await ff.writeFile('in', new Uint8Array(await f.arrayBuffer()));
+
+  // Parsing the header alone is cheap and prints the duration, which is what
+  // decides where to sample from.
+  await ff.exec(['-i', 'in']);
+
+  const n = 12;
+  const onProg = ({ progress }) => {
+    if (progress > 0 && progress <= 1) {
+      Loader.at(2, 60 + progress * 12, `Decoding, ${Math.round(progress * 100)}%`);
+    }
+  };
+  Loader.at(2, 60, dur
+    ? `${dur.toFixed(1)} seconds long, taking up to ${n} keyframes`
+    : `Taking up to ${n} keyframes`);
+  await breathe();
+  // Keyframes only. Decoding every frame of 1080p HEVC in WebAssembly takes
+  // minutes, and almost all of that work is thrown away: we want one clear
+  // still. A keyframe is self contained, so it decodes without the frames
+  // before it, and it is the least motion-blurred frame around it.
+  ff.on('progress', onProg);
+  await ff.exec(['-skip_frame', 'nokey', '-i', 'in', '-an', '-vsync', '0',
+                 '-vf', 'scale=1100:-2,showinfo', '-frames:v', String(n), '-y', 'f%03d.png']);
+  ff.off('progress', onProg);
+  ff.off('log', onLog);
+
+  const frames = [];
+  for (let i = 1; i <= n; i++) {
+    const name = `f${String(i).padStart(3, '0')}.png`;
+    let data = null;
+    try { data = await ff.readFile(name); } catch { break; }
+    if (!data || !data.length) break;
+    frames.push({ blob: new Blob([data], { type: 'image/png' }),
+                  t: times.length >= i ? times[i - 1] : null });
+    try { await ff.deleteFile(name); } catch { /* it is a scratch file */ }
+  }
+  try { await ff.deleteFile('in'); } catch { /* likewise */ }
+  return { frames, duration: dur };
+}
+
+async function decodeHere(f) {
+  Loader.show('Decoding it here', [
+    'Fetching a decoder, once',
+    'Reading the clip',
+    'Taking frames across it',
+    'Scoring each one for sharpness',
+    'Ready to calibrate'
+  ], 10 * 60 * 1000);
+  try {
+    const { frames } = await framesViaWasm(f);
+    if (!frames.length) {
+      return Loader.fail(`The decoder opened ${f.name} but found no frames in it.`);
+    }
+    gallery.length = 0;
+    for (let i = 0; i < frames.length; i++) {
+      Loader.at(3, 72 + (i / frames.length) * 24, `Frame ${i + 1} of ${frames.length}`);
+      await breathe();
+      const img = await asImage(frames[i].blob);
+      if (!img) continue;
+      gallery.push({
+        img,
+        name: frames[i].t === null ? `frame ${i + 1}` : `at ${frames[i].t.toFixed(1)} s`,
+        a: assess(img)
+      });
+    }
+    if (!gallery.length) return Loader.fail('Those frames would not decode into pictures.');
+    gallery.sort((p, q) => q.a.sharpness - p.a.sharpness);
+    Loader.at(4, 98, `Sharpest frame ${gallery[0].name}`);
+    renderStrip();
+    await breathe();
+    useImage(gallery[0]);
+    Loader.done();
+  } catch (e) {
+    Loader.fail(`The decoder could not finish ${f.name}. ` +
+                String((e && e.message) || e).slice(0, 140));
+  }
+}
+
 /** Said in one place, because it is the message this page gives most often. */
 function cannotDecode(name, codec) {
   return `${name} is recorded in ${CODEC_NAME[codec] || 'a codec'}, which this browser ` +
-    'cannot decode. On a Samsung, Camera, Settings, Advanced video options, turn off ' +
-    'High efficiency video. On an iPhone, Settings, Camera, Formats, Most Compatible. ' +
-    'Or take a photograph instead, which measures just as well.';
+    'has no decoder for. This page can fetch one and do it here instead: 32 MB, once, ' +
+    'and the clip still never leaves your browser. Or record in H.264 next time, which ' +
+    'is High efficiency video off on a Samsung and Most Compatible on an iPhone.';
 }
 
 async function loadVideo(f) {
@@ -627,7 +795,8 @@ async function loadVideo(f) {
   // Ask the file what it is before handing it to a decoder that may refuse it.
   let codec = null;
   try { codec = await videoCodec(f); } catch { /* fall through and just try it */ }
-  if (codec && !canPlay(codec)) return Loader.fail(cannotDecode(f.name, codec));
+  if (codec && !canPlay(codec)) return Loader.fail(cannotDecode(f.name, codec),
+    { label: 'Decode it here anyway', run: () => decodeHere(f) });
   if (codec) Loader.at(0, 14, `${CODEC_NAME[codec] || codec}, ${(f.size / 1e6).toFixed(0)} MB`);
 
   if (video && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
@@ -646,7 +815,8 @@ async function loadVideo(f) {
   // here. Say which file and why instead of spinning on "Decoding the clip".
   video.onerror = () => Loader.fail(
     codec ? cannotDecode(f.name, codec)
-          : `${f.name} would not decode in this browser. Chrome plays H.264 MP4 and MOV.`);
+          : `${f.name} would not decode in this browser. Chrome plays H.264 MP4 and MOV.`,
+    { label: 'Decode it here anyway', run: () => decodeHere(f) });
 
   video.src = URL.createObjectURL(f);
   video.onloadeddata = async () => {
@@ -655,7 +825,8 @@ async function loadVideo(f) {
     // videoHeight already carry the rotation the phone recorded.
     if (!video.videoWidth || !video.videoHeight) return Loader.fail(
       codec ? cannotDecode(f.name, codec)
-            : `${f.name} opened but has no picture in it that this browser can paint.`);
+            : `${f.name} opened but has no picture in it that this browser can paint.`,
+      { label: 'Decode it here anyway', run: () => decodeHere(f) });
 
     const max = 1100;
     const k = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
