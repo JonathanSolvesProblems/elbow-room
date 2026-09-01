@@ -31,6 +31,8 @@
   @media (max-width:900px) { .wrap { grid-template-columns:1fr; } }
 
   .stage { position:relative; display:grid; place-items:center; padding:1rem; }
+  #pano { width:100%; height:calc(100vh - 5rem); border-radius:10px;
+          border:1px solid var(--line); cursor:crosshair; touch-action:none; }
   canvas { max-width:100%; max-height:calc(100vh - 2rem); border-radius:10px;
            border:1px solid var(--line); cursor:crosshair; touch-action:none; }
   .drop { border:2px dashed var(--line); border-radius:14px; padding:4rem 3rem; text-align:center;
@@ -94,6 +96,7 @@
       <input type="file" id="file" accept="image/*,video/*" hidden>
     </div>
     <canvas id="cv" hidden></canvas>
+    <canvas id="pano" hidden></canvas>
   </div>
 
   <aside>
@@ -115,12 +118,24 @@
       <li id="s4">Now click any two points and get real inches.</li>
     </ol>
 
+    <div id="panoBox" hidden>
+      <h2>360 footage</h2>
+      <p class="note" style="margin:0 0 .6rem">Equirectangular frame detected. Every pixel here
+        is a known direction, so a point on the floor has exactly one solution once you say how
+        high the camera was. Drag to look around, then click two points <strong>on the floor</strong>.</p>
+      <label>camera height above the floor, inches</label>
+      <input id="camH" type="number" step="1" value="60">
+      <p class="note" id="panoState" style="margin-top:.5rem">Click the first floor point.</p>
+    </div>
+
+    <div id="flatBox">
     <h2>The reference</h2>
     <div class="two">
       <div><label>width in</label><input id="rw" type="number" step="0.25" value="41.5"></div>
       <div><label>depth in</label><input id="rh" type="number" step="0.25" value="41.5"></div>
     </div>
     <p class="note" id="refstate">Waiting for four corners.</p>
+    </div>
 
     <div class="reading" id="reading" hidden></div>
 
@@ -148,8 +163,17 @@
   </aside>
 </div>
 
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
 <script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createSession, project, distance } from '../app/calibrate.js';
+import { looksEquirectangular, heightSensitivity } from '../app/pano.js';
 import { ft } from '../app/units.js';
 
 const S = createSession();
@@ -190,6 +214,7 @@ function load(f) {
   fr.onload = () => {
     const img = new Image();
     img.onload = () => {
+      if (looksEquirectangular(img.width, img.height)) return startPano(img);
       S.image = img;
       const max = 1100;
       const k = Math.min(1, max / Math.max(img.width, img.height));
@@ -213,14 +238,63 @@ function loadVideo(f) {
   video.preload = 'auto';
   video.muted = true;
   video.src = URL.createObjectURL(f);
-  video.onloadeddata = () => {
+  video.onloadeddata = async () => {
     const max = 1100;
     const k = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
     cv.width = video.videoWidth * k; cv.height = video.videoHeight * k;
     cv.hidden = false; drop.hidden = true;
     document.getElementById('scrub').hidden = false;
-    grabFrame(0);
+    const t = await bestFrameTime();
+    grabFrame(t);
+    document.getElementById('frame').value =
+      Math.round((t / Math.max(video.duration, 0.001)) * 1000);
   };
+
+/**
+ * Pick the frame worth measuring on, so nobody has to scrub for it.
+ *
+ * Hand-held footage is mostly motion blur, and a blurred frame gives a soft
+ * corner and a soft corner gives a wrong number. Sample across the clip and
+ * keep the sharpest, scored by mean absolute Laplacian, which is the standard
+ * cheap focus measure and needs nothing but a canvas.
+ */
+async function bestFrameTime(samples = 12) {
+  if (!video || !isFinite(video.duration)) return 0;
+  const probe = document.createElement('canvas');
+  probe.width = 240; probe.height = 135;
+  const g = probe.getContext('2d', { willReadFrequently: true });
+  let best = { t: 0, score: -1 };
+
+  for (let i = 0; i < samples; i++) {
+    const t = (i + 0.5) / samples * video.duration;
+    await seekTo(t);
+    g.drawImage(video, 0, 0, probe.width, probe.height);
+    const d = g.getImageData(0, 0, probe.width, probe.height).data;
+    let sum = 0;
+    for (let y = 1; y < probe.height - 1; y++) {
+      for (let x = 1; x < probe.width - 1; x++) {
+        const at = (xx, yy) => {
+          const o = (yy * probe.width + xx) * 4;
+          return d[o] * 0.299 + d[o + 1] * 0.587 + d[o + 2] * 0.114;
+        };
+        sum += Math.abs(4 * at(x, y) - at(x - 1, y) - at(x + 1, y) - at(x, y - 1) - at(x, y + 1));
+      }
+    }
+    const score = sum / (probe.width * probe.height);
+    if (score > best.score) best = { t, score };
+  }
+  const note = document.getElementById('frametime');
+  if (note) note.dataset.auto = best.score.toFixed(1);
+  return best.t;
+}
+
+function seekTo(t) {
+  return new Promise(res => {
+    const done = () => { video.removeEventListener('seeked', done); res(); };
+    video.addEventListener('seeked', done);
+    video.currentTime = Math.min(t, Math.max(0, video.duration - 0.05));
+  });
+}
 }
 
 function grabFrame(t) {
@@ -231,7 +305,10 @@ function grabFrame(t) {
     c.width = cv.width; c.height = cv.height;
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
     const img = new Image();
-    img.onload = () => { S.image = img; S.reset(); draw(); steps(); };
+    img.onload = () => {
+      if (looksEquirectangular(img.width, img.height)) return startPano(img);
+      S.image = img; S.reset(); draw(); steps();
+    };
     img.src = c.toDataURL('image/jpeg', 0.92);
     document.getElementById('frametime').textContent =
       video.currentTime.toFixed(2) + ' s of ' + video.duration.toFixed(2) + ' s';
@@ -346,6 +423,85 @@ document.getElementById('reset').onclick = () => {
 
 S.onChange(() => { draw(); steps(); readout(); });
 steps();
+
+/* ---------- 360 footage ---------- */
+
+let panoPicks = [];
+function startPano(img) {
+  drop.hidden = true;
+  cv.hidden = true;
+  document.getElementById('flatBox').hidden = true;
+  document.getElementById('panoBox').hidden = false;
+  const canvas = document.getElementById('pano');
+  canvas.hidden = false;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(72, 1, 0.1, 100);
+  cam.position.set(0, 0, 0.01);
+
+  const tex = new THREE.Texture(img);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(10, 64, 40),
+    new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide })));
+
+  const controls = new OrbitControls(cam, canvas);
+  controls.enableZoom = false;
+  controls.enablePan = false;
+  controls.rotateSpeed = -0.3;
+  const marks = new THREE.Group();
+  scene.add(marks);
+
+  const size = () => {
+    const r = canvas.getBoundingClientRect();
+    renderer.setSize(r.width, r.height, false);
+    cam.aspect = r.width / Math.max(r.height, 1);
+    cam.updateProjectionMatrix();
+  };
+  size();
+  addEventListener('resize', size);
+  (function spin() { requestAnimationFrame(spin); controls.update(); renderer.render(scene, cam); })();
+
+  const ray = new THREE.Raycaster();
+  let down = null;
+  canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointerup', e => {
+    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) { down = null; return; }
+    down = null;
+    const r = canvas.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(
+      ((e.clientX - r.left) / r.width) * 2 - 1,
+      -((e.clientY - r.top) / r.height) * 2 + 1), cam);
+    const d = ray.ray.direction;
+    const state = document.getElementById('panoState');
+    if (d.y >= -1e-6) { state.textContent = 'That is above the horizon. Click a point on the floor.'; return; }
+
+    const hgt = +document.getElementById('camH').value || 60;
+    const t = -hgt / d.y;
+    panoPicks.push({ x: d.x * t, z: d.z * t });
+
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0x3fb27f }));
+    dot.position.copy(d).multiplyScalar(9.4);
+    marks.add(dot);
+
+    if (panoPicks.length === 2) {
+      const [a, b2] = panoPicks;
+      const inches = Math.hypot(a.x - b2.x, a.z - b2.z);
+      last = { inches };
+      readout();
+      state.innerHTML = ft(inches) + ' on the floor.<br>An inch of error in the camera height ' +
+        'moves that by about ' + heightSensitivity(inches, hgt).toFixed(1) + ' in.';
+      panoPicks = [];
+      setTimeout(() => marks.clear(), 1500);
+    } else {
+      state.textContent = 'Now click the second floor point.';
+    }
+  });
+}
 
 /* ---------- the agent can drive all of it ---------- */
 
