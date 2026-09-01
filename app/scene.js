@@ -37,6 +37,10 @@ function photo(url, repeat = 1) {
   return t;
 }
 
+let onMove = null;
+/** Tell the rest of the app when someone drags the object in 3D. */
+export function onObjectMove(fn) { onMove = fn; }
+
 export function attach(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -72,6 +76,7 @@ export function attach(canvas) {
   scene.add(fill);
 
   build();
+  bindDrag(canvas);
   resize();
   window.addEventListener('resize', resize);
   loop();
@@ -101,6 +106,57 @@ function loop() {
 }
 
 export function dispose() { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); }
+
+/**
+ * Pick the object up and carry it through the space.
+ *
+ * Raycast onto a horizontal plane at the object's own base height, so dragging
+ * follows the floor rather than the camera. The plan view is told about every
+ * move, because the two drawings are one state.
+ */
+function bindDrag(canvas) {
+  const ray = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const plane = new THREE.Plane();
+  const hit = new THREE.Vector3();
+  let dragging = false, grabOffset = new THREE.Vector3();
+
+  const toNdc = e => {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  };
+
+  canvas.addEventListener('pointerdown', e => {
+    if (!objectMesh) return;
+    toNdc(e);
+    ray.setFromCamera(ndc, camera);
+    if (!ray.intersectObject(objectMesh, true).length) return;
+    dragging = true;
+    controls.enabled = false;
+    canvas.setPointerCapture(e.pointerId);
+    plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), objectMesh.position);
+    if (ray.ray.intersectPlane(plane, hit)) grabOffset.copy(objectMesh.position).sub(hit);
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    toNdc(e);
+    ray.setFromCamera(ndc, camera);
+    if (!ray.ray.intersectPlane(plane, hit)) return;
+    const p = hit.add(grabOffset);
+    M.pos = { x: p.x / IN, y: p.z / IN };
+    placeObject();
+    if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
+  });
+
+  const stop = e => {
+    if (!dragging) return;
+    dragging = false; controls.enabled = true;
+    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+  };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
+}
 
 /* ------------------------------------------------------------------ *
  * The shaft
@@ -152,7 +208,7 @@ function build() {
     const g = new THREE.ExtrudeGeometry(sh, { depth: h + R, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
     const m = new THREE.Mesh(g, [woodTop, woodSide]);
-    m.position.y = h + R;
+    m.position.y = 0;               // grows up from the floor to its own tread
     m.castShadow = m.receiveShadow = true;
     shaftGroup.add(m);
     h += R;
@@ -239,6 +295,7 @@ function placeObject() {
 
   objectMesh = new THREE.Mesh(geo, mat);
   objectMesh.castShadow = true;
+  objectMesh.add(dimensionLabel(L, W, H));
   objectMesh.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
     new THREE.LineBasicMaterial({ color: colour })
@@ -258,6 +315,31 @@ function placeObject() {
   const halfV = (Math.abs(L * Math.sin(tilt)) + Math.abs(H * Math.cos(tilt))) / 2 * IN;
   objectMesh.position.set(M.pos.x * IN, floorH + halfV + 0.02, M.pos.y * IN);
   scene.add(objectMesh);
+}
+
+/** A little sprite carrying the object's real size, always facing the camera. */
+function dimensionLabel(L, W, H) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,.62)';
+  g.roundRect(0, 0, 512, 128, 18); g.fill();
+  g.fillStyle = '#fff';
+  g.font = 'bold 46px ui-monospace, monospace';
+  g.textAlign = 'center';
+  g.fillText(`${ftLocal(L)} × ${ftLocal(W)} × ${ftLocal(H)}`, 256, 82);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  sp.scale.set(1.0, 0.25, 1);
+  sp.position.y = H * IN * 0.5 + 0.22;
+  return sp;
+}
+
+function ftLocal(inches) {
+  const f = Math.floor(inches / 12), r = Math.round((inches - f * 12) * 2) / 2;
+  if (f === 0) return r + '"';
+  return r === 0 ? f + "'" : f + "'" + r + '"';
 }
 
 function floorAtInches(x, y) {

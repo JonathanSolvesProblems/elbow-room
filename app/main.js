@@ -159,6 +159,8 @@ export function boot() {
   view.state.b = STAIRCASE.turn.widthB.value;
   view.attach(document.getElementById('cv'));
   solid.attach(document.getElementById('solid'));
+  // Dragging in 3D moves the same couch the plan view is drawing.
+  solid.onObjectMove(p => { view.update({ pos: { x: p.x, y: p.y } }); });
 
   const pick = document.getElementById('pick');
   for (const item of CATALOGUE) {
