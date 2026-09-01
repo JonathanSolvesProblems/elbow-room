@@ -387,6 +387,53 @@ function kindOf(f) {
 
 const MAX_BYTES = 900 * 1024 * 1024;
 
+/**
+ * Which video codec is inside this file, read off the container.
+ *
+ * Samsung and iPhone both record HEVC by default now, and Chrome only plays it
+ * where the operating system supplies a decoder. Without this the browser opens
+ * the file, reports zero by zero, and the honest thing the page could say was
+ * "no picture in it", which sounds like a corrupt file and sends someone off to
+ * re-shoot a clip that is perfectly fine.
+ *
+ * An MP4 names its codec in a four character code inside the sample description
+ * box. Read the head and the tail of the file, since phones put the index at
+ * either end, and look for the ones that matter.
+ */
+async function videoCodec(f) {
+  const span = 1.5 * 1024 * 1024;
+  const parts = [f.slice(0, Math.min(span, f.size))];
+  if (f.size > span * 2) parts.push(f.slice(f.size - span));
+  let text = '';
+  for (const p of parts) {
+    const buf = new Uint8Array(await p.arrayBuffer());
+    // latin1 so every byte maps to one character and the four character codes
+    // survive intact.
+    let s = '';
+    for (let i = 0; i < buf.length; i += 32768) {
+      s += String.fromCharCode.apply(null, buf.subarray(i, i + 32768));
+    }
+    text += s;
+  }
+  if (/hvc1|hev1|hvcC/.test(text)) return 'hevc';
+  if (/avc1|avcC/.test(text)) return 'h264';
+  if (/av01/.test(text)) return 'av1';
+  if (/vp09|vp08/.test(text)) return 'vp9';
+  return null;
+}
+
+/** Can this browser play that codec at all. */
+function canPlay(codec) {
+  const v = document.createElement('video');
+  const probe = {
+    hevc: 'video/mp4; codecs="hev1.1.6.L93.B0"',
+    h264: 'video/mp4; codecs="avc1.42E01E"',
+    av1:  'video/mp4; codecs="av01.0.05M.08"',
+    vp9:  'video/webm; codecs="vp9"'
+  }[codec];
+  return probe ? !!v.canPlayType(probe) : true;
+}
+
 /** How many files this browser had to leave behind, reported in the advice panel. */
 let skipped = 0;
 
@@ -514,7 +561,17 @@ function load(f) {
  * Decoding happens in the page; nothing is uploaded.
  */
 let video = null;
-function loadVideo(f) {
+const CODEC_NAME = { hevc: 'HEVC, also called H.265', av1: 'AV1', vp9: 'VP9', h264: 'H.264' };
+
+/** Said in one place, because it is the message this page gives most often. */
+function cannotDecode(name, codec) {
+  return `${name} is recorded in ${CODEC_NAME[codec] || 'a codec'}, which this browser ` +
+    'cannot decode. On a Samsung, Camera, Settings, Advanced video options, turn off ' +
+    'High efficiency video. On an iPhone, Settings, Camera, Formats, Most Compatible. ' +
+    'Or take a photograph instead, which measures just as well.';
+}
+
+async function loadVideo(f) {
   Loader.show('Reading your video', [
     'Decoding the clip',
     'Sampling frames across it',
@@ -526,6 +583,12 @@ function loadVideo(f) {
   if (f.size > MAX_BYTES) return Loader.fail(
     `${f.name} is ${(f.size / 1e9).toFixed(1)} GB, which is more than a browser tab can hold. ` +
     'Trim it on the phone and try again.');
+
+  // Ask the file what it is before handing it to a decoder that may refuse it.
+  let codec = null;
+  try { codec = await videoCodec(f); } catch { /* fall through and just try it */ }
+  if (codec && !canPlay(codec)) return Loader.fail(cannotDecode(f.name, codec));
+  if (codec) Loader.at(0, 14, `${CODEC_NAME[codec] || codec}, ${(f.size / 1e6).toFixed(0)} MB`);
 
   if (video && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
   video = document.createElement('video');
@@ -542,8 +605,8 @@ function loadVideo(f) {
   // A Samsung clip recorded in HEVC, or any codec this browser lacks, fails
   // here. Say which file and why instead of spinning on "Decoding the clip".
   video.onerror = () => Loader.fail(
-    `${f.name} would not decode. Chrome plays H.264 MP4 and MOV. ` +
-    'If the phone was set to HEVC, switch it to the compatible format and re-record.');
+    codec ? cannotDecode(f.name, codec)
+          : `${f.name} would not decode in this browser. Chrome plays H.264 MP4 and MOV.`);
 
   video.src = URL.createObjectURL(f);
   video.onloadeddata = async () => {
@@ -551,7 +614,8 @@ function loadVideo(f) {
     // reports no picture. Portrait phone video is fine: videoWidth and
     // videoHeight already carry the rotation the phone recorded.
     if (!video.videoWidth || !video.videoHeight) return Loader.fail(
-      `${f.name} opened but has no picture in it that this browser can paint.`);
+      codec ? cannotDecode(f.name, codec)
+            : `${f.name} opened but has no picture in it that this browser can paint.`);
 
     const max = 1100;
     const k = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));

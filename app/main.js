@@ -128,6 +128,19 @@ export const app = {
 
   setDoorRemoved(v) { this.doorRemoved = !!v; this.sync(); },
 
+  /**
+   * Put the object back where it starts, facing the way it starts.
+   *
+   * Reset used to restore the position and leave the angle alone, so after
+   * Show me the tightest point the couch went home still turned 45 degrees
+   * through the corner and did not look reset at all.
+   */
+  resetPose() {
+    this.pinchNote = null;
+    view.park();
+    this.emit();
+  },
+
   reset() {
     this.doorRemoved = false;
     this.select(CATALOGUE[0].id);
@@ -187,6 +200,11 @@ export function boot() {
   // Dragging in 3D moves the same couch the plan view is drawing.
   solid.onObjectMove(p => { view.update({ pos: { x: p.x, y: p.y } }); });
   window.addEventListener('elbowroom:mode', e => solid.setMode(e.detail));
+  // Registered after the scene's own handler, so the camera reframes first and
+  // the pose is then restored through the one code path that owns it.
+  window.addEventListener('elbowroom:camera', e => {
+    if (e.detail === 'reset') app.resetPose();
+  });
 
   const pick = document.getElementById('pick');
   for (const item of CATALOGUE) {

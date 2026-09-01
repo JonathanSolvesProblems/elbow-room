@@ -105,6 +105,7 @@ export function attach(canvas) {
     if (e.detail === 'in')    sph.radius = Math.max(controls.minDistance, sph.radius * 0.8);
     if (e.detail === 'out')   sph.radius = Math.min(controls.maxDistance, sph.radius * 1.25);
     if (e.detail === 'reset') {
+      M.note = null;
       M.pos = { x: M.b + M.object.length * 0.55 + 6, y: M.a / 2 };
       placeObject();
       if (onMove) onMove({ x: M.pos.x, y: M.pos.y });
