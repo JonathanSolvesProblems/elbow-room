@@ -301,6 +301,35 @@ function build() {
     h += R;
   }
 
+  // Solid sides carrying each flight. Without them the treads hang in mid air,
+  // which is what still read as disconnected.
+  const rampMat = new THREE.MeshStandardMaterial({ color: 0xcdbfa8, roughness: .92 });
+
+  // Lower arm: climbs as x decreases, so the triangle is high at the turn.
+  const lowShape = new THREE.Shape();
+  lowShape.moveTo(B, 0);
+  lowShape.lineTo(B + straight * G, 0);
+  lowShape.lineTo(B, straight * R);
+  lowShape.closePath();
+  const lowRamp = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(lowShape, { depth: A, bevelEnabled: false }), rampMat);
+  lowRamp.castShadow = lowRamp.receiveShadow = true;
+  shaftGroup.add(lowRamp);
+
+  // Upper arm: climbs as y increases, starting from the top of the winders.
+  const upBase = (straight + winders) * R;
+  const upShape = new THREE.Shape();
+  upShape.moveTo(-A, 0);
+  upShape.lineTo(-(A + straight * G), 0);
+  upShape.lineTo(-(A + straight * G), upBase + straight * R);
+  upShape.lineTo(-A, upBase);
+  upShape.closePath();
+  const upGeo = new THREE.ExtrudeGeometry(upShape, { depth: B, bevelEnabled: false });
+  upGeo.rotateY(Math.PI / 2);
+  const upRamp = new THREE.Mesh(upGeo, rampMat);
+  upRamp.castShadow = upRamp.receiveShadow = true;
+  shaftGroup.add(upRamp);
+
   // Upper arm, climbing away from the turn.
   for (let i = 0; i < straight; i++) {
     const y = A + (i + 0.5) * G;
