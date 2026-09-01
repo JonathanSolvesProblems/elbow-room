@@ -196,6 +196,8 @@
       <option value="turn.widthA">Turn, first span</option>
       <option value="turn.widthB">Turn, second span</option>
       <option value="turn.headroom">Headroom over the turn</option>
+      <option value="run.rise">Rise of one step</option>
+      <option value="run.going">Going, the tread depth</option>
     </select>
     <button id="assign" disabled>Save this reading</button>
     <p class="note" id="assignWhy" style="margin-top:.4rem"></p>
@@ -203,8 +205,28 @@
     <p class="note" id="forgetWrap" hidden style="margin-top:.3rem">
       <a href="#" id="forget" style="color:var(--mut)">Forget these readings</a></p>
 
+    <h2>Count the steps</h2>
+    <p class="note" style="margin:0 0 .5rem">These are counted, not measured, and they decide the
+      shape of the staircase you will orbit.</p>
+    <div class="two">
+      <div><label>steps in total</label><input id="cTreads" type="number" min="2" max="30" step="1" value="9"></div>
+      <div><label>of those, pie-shaped</label><input id="cWinders" type="number" min="0" max="9" step="1" value="3"></div>
+    </div>
+
+    <label style="margin-top:.7rem"><input type="checkbox" id="useSkin" checked
+      style="width:auto;margin-right:.4rem">Put this frame on the walls in 3D</label>
+
     <button class="primary" id="send" disabled>Use this staircase in Elbow Room</button>
     <p class="note" id="sendWhy">Saved in this browser only. Nothing is sent anywhere.</p>
+
+    <h2>Your staircases</h2>
+    <p class="note" id="noSessions" style="margin:0 0 .5rem">Nothing saved yet. Measure one and
+      name it, and it will be here next time.</p>
+    <ul class="marks" id="sessions"></ul>
+    <div class="two" style="margin-top:.5rem">
+      <input id="sessionName" placeholder="Basement stairs">
+      <button id="saveSession">Save this one</button>
+    </div>
 
     <h2>Ask your agent</h2>
     <p class="note">
@@ -1057,6 +1079,11 @@ function restore() {
   for (const [k, v] of Object.entries(prev)) {
     if (typeof v === 'number' && isFinite(v) && v > 0) saved[k] = v;
   }
+  // And put the counts back in the boxes, or a staircase with thirteen steps
+  // comes back offering nine.
+  const t = document.getElementById('cTreads'), w = document.getElementById('cWinders');
+  if (t && saved['run.treads']) t.value = Math.round(saved['run.treads']);
+  if (w && saved['turn.treads']) w.value = Math.round(saved['turn.treads']);
 }
 
 document.getElementById('forget').onclick = e => {
@@ -1073,8 +1100,105 @@ function renderMarks() {
   document.getElementById('forgetWrap').hidden = !n;
 }
 
+/* ---------------------------------------------------------------------- *
+ * Counts, a photograph, and staircases you keep.
+ *
+ * Measuring four spans gave the planner a differently sized version of my
+ * staircase. The shaft in 3D is built from the tread count, the rise, the going
+ * and the winders as well, so those have to come across or the shape stays
+ * mine. The counts are typed rather than measured, because counting steps off a
+ * photograph is the one thing a person does better than a homography.
+ * ---------------------------------------------------------------------- */
+
+const SESSIONS = 'elbowroom.sessions';
+const PHOTO = 'elbowroom.photo';
+
+function counts() {
+  const t = Math.round(+document.getElementById('cTreads').value) || 9;
+  const w = Math.round(+document.getElementById('cWinders').value) || 3;
+  return { 'run.treads': Math.max(2, t), 'turn.treads': Math.min(Math.max(0, w), t - 1) };
+}
+
+/** The frame on screen, small enough to keep in a browser store. */
+function frameAsPhoto() {
+  if (!document.getElementById('useSkin').checked || !S.image) return null;
+  const c = document.createElement('canvas');
+  const k = Math.min(1, 900 / Math.max(S.image.width, S.image.height));
+  c.width = Math.max(2, (S.image.width * k) | 0);
+  c.height = Math.max(2, (S.image.height * k) | 0);
+  c.getContext('2d').drawImage(S.image, 0, 0, c.width, c.height);
+  try { return c.toDataURL('image/jpeg', 0.72); } catch { return null; }
+}
+
+function readSessions() {
+  try { return JSON.parse(localStorage.getItem(SESSIONS) || '[]') || []; } catch { return []; }
+}
+
+function writeSessions(list) {
+  try { localStorage.setItem(SESSIONS, JSON.stringify(list)); } catch { /* full or private */ }
+}
+
+function renderSessions() {
+  const list = readSessions();
+  const ul = document.getElementById('sessions');
+  document.getElementById('noSessions').hidden = list.length > 0;
+  ul.innerHTML = list.map((x, i) =>
+    `<li><span>${String(x.name).slice(0, 30).replace(/</g, '&lt;')}</span>` +
+    `<span><a href="#" data-load="${i}">open</a> &middot; ` +
+    `<a href="#" data-drop="${i}" style="color:var(--mut)">remove</a></span></li>`).join('');
+  ul.querySelectorAll('[data-load]').forEach(a => {
+    a.onclick = e => {
+      e.preventDefault();
+      const x = readSessions()[+a.dataset.load];
+      if (!x) return;
+      for (const k of Object.keys(saved)) delete saved[k];
+      Object.assign(saved, x.readings || {});
+      if (x.counts) {
+        document.getElementById('cTreads').value = x.counts['run.treads'] || 9;
+        document.getElementById('cWinders').value = x.counts['turn.treads'] || 3;
+      }
+      try {
+        if (x.photo) localStorage.setItem(PHOTO, x.photo);
+        else localStorage.removeItem(PHOTO);
+      } catch { /* nothing to do */ }
+      persist();
+      renderMarks(); readout();
+    };
+  });
+  ul.querySelectorAll('[data-drop]').forEach(a => {
+    a.onclick = e => {
+      e.preventDefault();
+      const list2 = readSessions();
+      list2.splice(+a.dataset.drop, 1);
+      writeSessions(list2);
+      renderSessions();
+    };
+  });
+}
+
+document.getElementById('saveSession').onclick = () => {
+  const name = (document.getElementById('sessionName').value || '').trim() || 'My staircase';
+  const list = readSessions().filter(x => x.name !== name);
+  list.unshift({
+    name,
+    savedAt: new Date().toISOString().slice(0, 10),
+    readings: { ...saved },
+    counts: counts(),
+    photo: frameAsPhoto()
+  });
+  writeSessions(list.slice(0, 8));
+  document.getElementById('sessionName').value = '';
+  renderSessions();
+};
+
 document.getElementById('send').onclick = () => {
+  Object.assign(saved, counts());
   persist();
+  const photo = frameAsPhoto();
+  try {
+    if (photo) localStorage.setItem(PHOTO, photo);
+    else localStorage.removeItem(PHOTO);
+  } catch { /* the staircase still goes over without its skin */ }
   location.href = '/?mine=1';
 };
 
@@ -1086,6 +1210,7 @@ document.getElementById('reset').onclick = () => {
 S.onChange(() => { draw(); steps(); readout(); });
 restore();
 renderMarks();
+renderSessions();
 steps();
 readout();
 

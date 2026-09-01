@@ -117,10 +117,16 @@ export const app = {
   },
 
   setStairMeasurement(field, inches, note) {
-    const target = field.startsWith('turn.')
-      ? this.stairModel.turn[field.slice(5)]
-      : this.stairModel[field];
-    if (!target || typeof target !== 'object') return false;
+    // A dotted path, so the run's tread count and going are reachable too, not
+    // just the four figures the turn happens to expose. Every one of these is
+    // an input to the 3D shaft, so being able to set them is the difference
+    // between a generic staircase and yours.
+    let target = this.stairModel;
+    for (const key of field.split('.')) {
+      if (!target || typeof target !== 'object') return false;
+      target = target[key];
+    }
+    if (!target || typeof target !== 'object' || !('value' in target)) return false;
     target.value = inches;
     target.source = SOURCE.MEASURED;
     target.note = note || 'Entered during this session.';
@@ -188,8 +194,15 @@ function loadMine() {
   let n = 0;
   for (const [field, inches] of Object.entries(mine)) {
     if (typeof inches !== 'number' || !isFinite(inches) || inches <= 0) continue;
-    if (app.setStairMeasurement(field, inches, 'Measured from your own photograph on /measure.')) n++;
+    const counted = /treads$/.test(field);
+    if (app.setStairMeasurement(field, counted ? Math.round(inches) : inches,
+        counted ? 'Counted on your own staircase.'
+                : 'Measured from your own photograph on /measure.')) n++;
   }
+  // The shaft is rebuilt from whatever came across, so a different tread count
+  // or going gives a different staircase rather than the same one relabelled.
+  view.state.a = app.stairModel.turn.widthA.value;
+  view.state.b = app.stairModel.turn.widthB.value;
   if (n) {
     STAIRCASE.label = 'Your staircase, measured from a photograph';
     app.stair = plain(STAIRCASE);
@@ -206,6 +219,13 @@ function loadMine() {
     }
     const tag = document.getElementById('tag');
     if (tag) tag.textContent = 'Before you buy the couch, find out whether it can get up the stairs.';
+
+    // And put your own photograph on the walls, so the shaft you orbit looks
+    // like the one you photographed rather than like mine.
+    try {
+      const skin = localStorage.getItem('elbowroom.photo');
+      if (skin) solid.setSkin(skin);
+    } catch { /* private mode, keep the default surfaces */ }
   }
   return n > 0;
 }

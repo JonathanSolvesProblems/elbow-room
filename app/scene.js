@@ -30,7 +30,37 @@ let M = {
 };
 
 const tex = new THREE.TextureLoader();
+
+/**
+ * Your own stairwell on the surfaces.
+ *
+ * The geometry is already yours once you have measured it: the tread count, the
+ * rise, the going and the turn all come out of the model. What was still mine
+ * was the look, because the wall and tread textures are photographs of my
+ * basement. Hand in a frame of your own and the shaft you orbit is your
+ * staircase in both senses.
+ *
+ * This is a skin, not a reconstruction. Nothing here pretends to be geometry
+ * recovered from the picture; the picture is wallpaper on a model whose
+ * dimensions came off a tape and a homography.
+ */
+let skin = null;
+export function setSkin(dataURL) {
+  skin = dataURL || null;
+  if (scene) build();
+}
+
 function photo(url, repeat = 1) {
+  if (skin) {
+    // Once, not tiled. Repeating a photograph of a staircase across a wall
+    // makes wallpaper of staircases, which is worse than the plain plaster it
+    // replaced. One copy, stretched, reads as the room it came from.
+    const t = tex.load(skin);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.repeat.set(1, 1);
+    return t;
+  }
   const t = tex.load(url);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;

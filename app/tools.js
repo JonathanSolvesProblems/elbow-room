@@ -377,7 +377,8 @@ export function registerTools(app) {
         field:  {
           type: 'string',
           description: 'Which measurement.',
-          enum: ['clearWidth', 'turn.widthA', 'turn.widthB', 'turn.headroom']
+          enum: ['clearWidth', 'turn.widthA', 'turn.widthB', 'turn.headroom',
+                 'run.rise', 'run.going', 'run.treads', 'turn.treads']
         },
         inches: { type: 'number', description: 'The reading, in inches.' }
       },
@@ -388,9 +389,11 @@ export function registerTools(app) {
       const v = inches(args, ['inches'], { min: 1, max: 240 });
       if (typeof v === 'string') return reply(v);
       const inchesValue = v.inches;
-      if (!['clearWidth', 'turn.widthA', 'turn.widthB', 'turn.headroom'].includes(field)) {
+      if (!['clearWidth', 'turn.widthA', 'turn.widthB', 'turn.headroom',
+            'run.rise', 'run.going', 'run.treads', 'turn.treads'].includes(field)) {
         return reply('That is not a measurement this staircase keeps. ' +
-                     'Use clearWidth, turn.widthA, turn.widthB or turn.headroom.');
+                     'Use clearWidth, turn.widthA, turn.widthB, turn.headroom, run.rise, ' +
+                     'run.going, run.treads or turn.treads.');
       }
       if (second && typeof second.requestUserInteraction === 'function') {
         try { await second.requestUserInteraction(); } catch { /* fall through to the in-page ask */ }
