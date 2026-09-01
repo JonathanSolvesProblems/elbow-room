@@ -198,7 +198,10 @@ export function boot() {
       object: { length: app.dims.length, width: app.dims.depth, height: app.dims.height,
                 shape: app.current.shape || 'box' },
       tilt: r.footprint.tilt, upright: r.footprint.upright,
-      blocked: view.collides(),
+      // Colour by the verdict, not by whether it happens to be touching a wall
+      // where it is parked. Green while the sidebar says it does not go was the
+      // picture contradicting the words again.
+      blocked: r.verdict !== 'goes',
       pos: { ...view.state.pos }, yaw: view.state.angle
     });
 
