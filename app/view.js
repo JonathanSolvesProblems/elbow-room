@@ -123,7 +123,10 @@ function reframe() {
   cv.height = Math.max(1, r.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  armLen = Math.max(state.a, state.b) + state.object.length * 0.95;
+  // Long enough that the object is always inside the drawn floor. The
+  // corridor is infinite in the model, so stopping the drawing short made
+  // the couch look like it was outside a wall that does not exist.
+  armLen = Math.max(state.a, state.b) + state.object.length * 1.35 + 14;
   const pad = 26;
   const spanX = armLen + pad, spanY = armLen + pad;
   scale = Math.min(r.width / spanX, r.height / spanY);

@@ -31,7 +31,10 @@ let M = {
   a: 41.5, b: 41.5, headroom: 80,
   rise: 7.5, going: 9.5, treads: 9, winders: 3,
   object: { length: 91, width: 36, height: 48, shape: 'sofa' },
-  tilt: 0, upright: false, blocked: true, pinchAngle: 45
+  tilt: 0, upright: false, blocked: true,
+  // Where the plan view has it. The two must show the same state or they are
+  // two drawings of two different things.
+  pos: { x: 100, y: 20 }, yaw: 0
 };
 
 export function attach(canvas) {
@@ -190,15 +193,31 @@ export function draw() {
   ctx.textAlign = 'left';
 }
 
+/** Height of the tread under a point, matching treadList(). */
+function floorAt(x, y) {
+  const straight = Math.max(1, M.treads - M.winders);
+  if (y > M.a) {
+    const i = Math.min(straight - 1, Math.max(0, Math.floor((y - M.a) / M.going)));
+    return (straight + M.winders + i) * M.rise;
+  }
+  if (x > M.b) {
+    const i = Math.min(straight - 1, Math.max(0, Math.floor((x - M.b) / M.going)));
+    return (straight - 1 - i) * M.rise;
+  }
+  return straight * M.rise;   // on the winders
+}
+
 /** The object as a solid, tilted along its long axis by the solver's angle. */
 function drawObject(baseZ, colour) {
   const { length: L, width: W, height: H } = M.object;
   const tilt = (M.upright ? 90 : M.tilt) * DEG;
-  const yaw = M.pinchAngle * DEG;
+  const yaw = M.yaw * DEG;
 
-  // Sit it in the turn, resting on the tread, leaning by the tilt.
-  const cx = M.b * 0.55, cy = M.a * 0.55;
-  const cz = baseZ + (Math.abs(L * Math.sin(tilt)) + Math.abs(H * Math.cos(tilt))) / 2 + 1;
+  // Follow the plan view exactly, and rest on whatever tread is underneath.
+  const cx = M.pos.x, cy = M.pos.y;
+  const floorHere = floorAt(cx, cy);
+  const halfV = (Math.abs(L * Math.sin(tilt)) + Math.abs(H * Math.cos(tilt))) / 2;
+  const cz = floorHere + halfV + 0.5;
 
   const pts = [];
   for (const dx of [-L / 2, L / 2])

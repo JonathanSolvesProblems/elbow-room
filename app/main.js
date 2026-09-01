@@ -176,8 +176,8 @@ export function boot() {
       object: { length: app.dims.length, width: app.dims.depth, height: app.dims.height,
                 shape: app.current.shape || 'box' },
       tilt: r.footprint.tilt, upright: r.footprint.upright,
-      blocked: r.verdict !== 'goes',
-      pinchAngle: 45
+      blocked: view.collides(),
+      pos: { ...view.state.pos }, yaw: view.state.angle
     });
 
     const prov = document.getElementById('prov');
