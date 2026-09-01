@@ -64,10 +64,35 @@ function pointInRect(px_, py_, s) {
   return Math.abs(lx) <= s.object.length / 2 && Math.abs(ly) <= s.object.depth / 2;
 }
 
-/** Convex rectangle inside an L: all four corners in, reflex vertex out. */
+/**
+ * Does the object touch a wall?
+ *
+ * This has to test the shape that is actually drawn. When the tank started
+ * drawing as a circle while this still tested its bounding rectangle, it turned
+ * red with visible daylight around it, because the invisible corners had
+ * crossed the wall before the circle did.
+ */
 export function collides(s = state) {
+  if (isRound(s)) return circleHitsWall(s);
   for (const c of corners(s)) if (!inL(c.x, c.y, s.a, s.b)) return true;
   return pointInRect(s.b, s.a, s);
+}
+
+function isRound(s) {
+  return s.object.shape === 'cylinder' || (s.object.upright && s.object.shape === 'box');
+}
+
+/**
+ * A circle sits inside the L when it clears both outer walls and stays out of
+ * the forbidden quadrant beyond the reflex corner. The nearest point of that
+ * quadrant is (max(cx,b), max(cy,a)), so the clearance is the distance to it.
+ */
+function circleHitsWall(s) {
+  const { x: cx, y: cy } = s.pos;
+  const r = Math.max(s.object.length, s.object.depth) / 2;
+  if (cx < r || cy < r) return true;                 // outer walls
+  const dx = Math.max(0, s.b - cx), dy = Math.max(0, s.a - cy);
+  return Math.hypot(dx, dy) < r;                     // the inner corner
 }
 
 /* ------------------------------------------------------------------ *
@@ -237,7 +262,10 @@ function bindPointer() {
 
   cv.addEventListener('pointerdown', e => {
     const x = inx(e.offsetX), y = iny(e.offsetY);
-    if (pointInRect(x, y, state)) {
+    const grabbed = isRound(state)
+      ? Math.hypot(x - state.pos.x, y - state.pos.y) <= Math.max(state.object.length, state.object.depth) / 2
+      : pointInRect(x, y, state);
+    if (grabbed) {
       grab = { dx: state.pos.x - x, dy: state.pos.y - y };
       cv.setPointerCapture(e.pointerId);
     }
