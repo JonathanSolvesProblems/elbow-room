@@ -332,6 +332,9 @@ document.getElementById('example').onclick = e => {
     cv.width = img.width * k; cv.height = img.height * k;
     cv.hidden = false; drop.hidden = true;
     draw(); steps();
+    // The bundled example deserves the same assessment as anything uploaded,
+    // or the advice looks like it only appears for other people's photos.
+    showAdvice(assess(img));
   };
   img.src = '/docs/stairs-width.jpg';
 };
