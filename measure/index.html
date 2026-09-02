@@ -1119,6 +1119,8 @@ function setTracing(on) {
   document.getElementById('traceClear').hidden = outline.length === 0;
   cv.style.cursor = on ? 'crosshair' : '';
   roomFacts();
+  // The send button's reason depends on the outline, so refresh it here too.
+  readout();
   draw();
 }
 
@@ -1302,6 +1304,7 @@ cv.onclick = e => {
   if (tracing) {
     outline.push(p);
     roomFacts();
+    readout();
     draw();
     return;
   }

@@ -663,7 +663,14 @@ export function boot() {
   const mine = loadMine();
   const carried = loadObject();
   if (mine || carried) app.sync();
-  if (onMine) { try { localStorage.setItem(ACTIVE, '__working'); } catch { /* none */ } }
+  if (onMine) {
+    // A traced room is the more specific thing you just made, so it wins over
+    // loose readings when both arrive together.
+    const hasRoom = staircases().some(x => x.id === '__room');
+    try { localStorage.setItem(ACTIVE, hasRoom ? '__room' : '__working'); } catch { /* none */ }
+    const pickThis = staircases().find(x => x.id === (hasRoom ? '__room' : '__working'));
+    if (pickThis && pickThis.room) useStaircase(pickThis);
+  }
   else {
     // Whatever was chosen last, so the planner opens where you left it.
     let want = '';
