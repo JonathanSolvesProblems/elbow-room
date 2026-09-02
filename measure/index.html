@@ -183,7 +183,9 @@
 
   <aside>
     <h1>Measure your staircase</h1>
-    <p class="tag">Real inches out of one photograph, in the browser. No upload, no GPU.</p>
+    <p class="tag">Real inches out of <strong>one</strong> photograph, in the browser. No upload,
+      no GPU, and no reconstruction: you give it one size it can trust, and it gives you every
+      other size in that plane.</p>
 
     <div class="banner" id="banner">
       <strong>No site tools in this browser.</strong> The measuring works, but the agent cannot help.
@@ -230,6 +232,10 @@
     </div>
 
     <div id="advice" class="advice" hidden></div>
+    <p class="note" id="striphelp" hidden style="margin:.7rem 0 0;font-size:11.5px">
+      These are <strong>candidate stills</strong>, not a reconstruction. Nothing is being
+      stitched: pick the clearest one, click four corners of something whose real size you know,
+      and that one known size is what turns pixels into inches.</p>
     <div id="strip" class="strip" hidden></div>
     <div class="reading" id="reading" hidden></div>
 
@@ -637,6 +643,8 @@ function asImage(f) {
 
 function renderStrip() {
   const el = document.getElementById('strip');
+  const help = document.getElementById('striphelp');
+  if (help) help.hidden = gallery.length < 2;
   // Empty it as well as hiding it, so nothing is left behind to come back.
   if (gallery.length < 2) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
@@ -845,7 +853,7 @@ async function decodeHere(f) {
     'Reading the clip',
     'Taking frames across it',
     'Scoring each one for sharpness',
-    'Ready to calibrate'
+    'Ready for you to pick one and set its scale'
   ], 10 * 60 * 1000);
   try {
     const { frames } = await framesViaWasm(f);
