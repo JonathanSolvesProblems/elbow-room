@@ -238,6 +238,11 @@ function loadMine() {
  * canvas. Returns its label if anything came across.
  */
 function loadObject() {
+  // Behind the same switch as the staircase. Without this, anyone who had ever
+  // measured a wardrobe got their wardrobe on the demo page for ever, and the
+  // "use the 1970s house instead" link led back to a page that was still
+  // half theirs.
+  if (!new URLSearchParams(location.search).has('mine')) return null;
   let raw = null;
   try { raw = localStorage.getItem('elbowroom.object'); } catch { return null; }
   if (!raw) return null;
