@@ -189,6 +189,7 @@
       <div><label>depth in</label><input id="rh" type="number" step="0.25" value="41.5"></div>
     </div>
     <p class="note" id="refstate">Waiting for four corners.</p>
+    <button id="redo" hidden style="margin-top:.35rem">Redo the corners</button>
     <p class="note" id="planewarn" hidden style="margin-top:.4rem;color:#c9902f"></p>
     </div>
 
@@ -1052,6 +1053,9 @@ function steps() {
     : `Waiting for ${4 - S.refPoints.length} more corner(s).`;
 
   // One plane at a time, and the right size for the shape that was clicked.
+  const redo = document.getElementById('redo');
+  if (redo) redo.hidden = !S.image || S.refPoints.length === 0;
+
   const warn = document.getElementById('planewarn');
   if (warn) {
     const shape = refShapeComplaint();
@@ -1081,17 +1085,39 @@ function refShapeComplaint() {
   if (!S.H || S.refPoints.length !== 4) return '';
   const [a, b2, c, d] = S.refPoints;
   const len = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
-  const across = (len(a, b2) + len(c, d)) / 2;
-  const along  = (len(b2, c) + len(d, a)) / 2;
-  if (!across || !along) return '';
-  const drawn = across / along;
-  const typed = S.refWidth / S.refHeight;
-  if (!isFinite(drawn) || !isFinite(typed) || typed <= 0) return '';
-  const off = drawn > typed ? drawn / typed : typed / drawn;
-  if (off < 2.6) return '';
-  return `The shape you clicked is about ${drawn.toFixed(1)} times wider than it is deep, but ` +
-         `you have told me the reference is ${ft(S.refWidth)} by ${ft(S.refHeight)}. ` +
-         `A stair tread is roughly 41 by 10, not square. Fix the depth or every reading is out.`;
+
+  // Corners clicked out of order make a bow tie rather than a quadrilateral,
+  // and the homography from a bow tie is meaningless. Worth catching before
+  // anything about sizes, because no amount of correcting the boxes fixes it.
+  const cross = (o, p, q) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+  const hits = (p1, p2, p3, p4) => {
+    const d1 = cross(p3, p4, p1), d2 = cross(p3, p4, p2);
+    const d3 = cross(p1, p2, p3), d4 = cross(p1, p2, p4);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  };
+  if (hits(a, b2, c, d) || hits(b2, c, d, a)) {
+    return 'Those four corners cross over each other, which makes a bow tie rather than a ' +
+           'rectangle, and no reading from it means anything. Press Redo the corners and click ' +
+           'them all the way round: near left, near right, far right, far left.';
+  }
+
+  // Only the mistake actually worth catching: a long thin thing clicked while
+  // the boxes still say something square. A general aspect check cannot work,
+  // because perspective legitimately squashes a 41 by 10 tread to 15 to 1 in an
+  // oblique photograph, which is exactly the photograph this page is for.
+  const side1 = (len(a, b2) + len(c, d)) / 2;
+  const side2 = (len(b2, c) + len(d, a)) / 2;
+  if (!side1 || !side2) return '';
+  const long = Math.max(side1, side2), short = Math.min(side1, side2);
+  const drawnRatio = long / short;
+  const typedRatio = Math.max(S.refWidth, S.refHeight) / Math.min(S.refWidth, S.refHeight);
+  if (!isFinite(drawnRatio) || !isFinite(typedRatio)) return '';
+  if (drawnRatio < 4 || typedRatio > 1.5) return '';
+
+  return `You have clicked something long and thin, but told me it is ` +
+         `${ft(S.refWidth)} by ${ft(S.refHeight)}, which is square. If that was a stair tread ` +
+         `it is more like 41 wide by 10 deep. Put its real depth in the box above, or every ` +
+         `reading is out by that ratio.`;
 }
 
 function readout() {
@@ -1576,6 +1602,21 @@ document.getElementById('send').onclick = () => {
   } catch { /* the staircase still goes over */ }
 
   location.href = '/?mine=1';
+};
+
+/**
+ * Clear the corners, keep the picture.
+ *
+ * Getting the reference wrong is the easiest mistake on this page and the only
+ * way out used to be Start again, which threw away the decode as well. This
+ * takes back the four clicks and nothing else.
+ */
+document.getElementById('redo').onclick = () => {
+  const img = S.image;
+  S.reset();
+  S.image = img;
+  pending = null; last = null;
+  draw(); steps(); readout();
 };
 
 document.getElementById('reset').onclick = async () => {
