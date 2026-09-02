@@ -78,6 +78,10 @@
   .advice b { display:block; margin-bottom:.25rem; }
   .advice ul { margin:.35rem 0 0; padding-left:1.05rem; color:var(--mut); }
   .strip { display:flex; gap:.35rem; overflow-x:auto; margin-top:.7rem; padding-bottom:.2rem; }
+  /* An explicit display beats the hidden attribute, so the strip stayed on
+     screen with all its thumbnails after Start again. Say it once, here, for
+     anything that sets its own display. */
+  [hidden] { display:none !important; }
   .strip img { height:3.1rem; border-radius:6px; border:2px solid transparent; cursor:pointer;
                opacity:.6; flex:0 0 auto; }
   .strip img.on { border-color:var(--accent); opacity:1; }
@@ -598,7 +602,8 @@ function asImage(f) {
 
 function renderStrip() {
   const el = document.getElementById('strip');
-  if (gallery.length < 2) { el.hidden = true; return; }
+  // Empty it as well as hiding it, so nothing is left behind to come back.
+  if (gallery.length < 2) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   el.innerHTML = '';
   gallery.forEach((g, i) => {
