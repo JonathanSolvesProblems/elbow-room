@@ -654,6 +654,23 @@ export function boot() {
       }
       el.appendChild(row);
     }
+    // A room is not a staircase, and the page said "turn", "shaft" and "which
+    // staircase" over the top of somebody's living room in three places at once.
+    const isRoom = !!(list.find(x => x.id === active) || list[0]).room;
+    const say = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
+    say('planlabel', isRoom ? 'Plan · looking down on the floor'
+                            : 'Plan · looking down on the turn');
+    say('solidlabel', isRoom ? 'The room · drag to orbit, scroll to zoom'
+                             : 'The shaft · drag to orbit, scroll to zoom');
+    say('placeshead', isRoom ? 'Which place' : 'Which staircase');
+    const tagEl = document.getElementById('tag');
+    if (tagEl) {
+      if (tagEl.dataset.stairs === undefined) tagEl.dataset.stairs = tagEl.textContent;
+      tagEl.textContent = isRoom
+        ? 'Before you buy it, find out whether it fits. A room traced from your own photograph.'
+        : tagEl.dataset.stairs;
+    }
+
     const sw = document.getElementById('switch');
     if (sw) {
       const on = list.find(x => x.id === active) || list[0];

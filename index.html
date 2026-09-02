@@ -160,12 +160,12 @@
       <button role="tab" data-view="both">Both</button>
     </div>
     <div class="pane" data-pane="plan">
-      <span class="panelabel">Plan · looking down on the turn</span>
+      <span class="panelabel" id="planlabel">Plan · looking down on the turn</span>
       <canvas id="cv"></canvas>
       <div class="hint">Drag to move. Scroll to rotate.</div>
     </div>
     <div class="pane" data-pane="solid">
-      <span class="panelabel">The shaft · drag to orbit, scroll to zoom</span>
+      <span class="panelabel" id="solidlabel">The shaft · drag to orbit, scroll to zoom</span>
       <canvas id="solid"></canvas>
       <div class="viewctl">
         <button data-mode="orbit" class="on" title="Orbit the view">Orbit</button>
@@ -188,7 +188,7 @@
 
     <div class="yours" id="mine" hidden></div>
 
-    <h2 style="margin-top:0">Which staircase</h2>
+    <h2 style="margin-top:0" id="placeshead">Which staircase</h2>
     <div class="picker" id="picker"></div>
     <p class="note" id="switch" style="margin:.45rem 0 1rem"></p>
 
