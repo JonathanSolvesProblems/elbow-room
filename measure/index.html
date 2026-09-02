@@ -1261,6 +1261,9 @@ function setTracing(on) {
   roomFacts();
   // The send button's reason depends on the outline, so refresh it here too.
   readout();
+  // And so does the fork, which lives in steps(). Without this it stayed on
+  // screen after being answered, still asking a question already settled.
+  steps();
   draw();
 }
 
@@ -1326,6 +1329,7 @@ document.getElementById('forkRoom').onclick = () => {
 
 document.getElementById('forkStairs').onclick = () => {
   forked = true;
+  steps();
   readout();
   document.getElementById('field').scrollIntoView({ block: 'center', behavior: 'smooth' });
 };

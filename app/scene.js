@@ -480,6 +480,7 @@ function sampleSurface(group, want) {
 function stopAssembly(land) {
   if (!assembly) return;
   if (land && shaftGroup) shaftGroup.visible = true;
+  if (objectMesh) objectMesh.visible = true;
   scene.remove(assembly.points);
   assembly.points.geometry.dispose();
   assembly.points.material.dispose();
@@ -495,7 +496,7 @@ function assemble() {
     return announceBuilt();
   }
 
-  const target = sampleSurface(shaftGroup, 4200);
+  const target = sampleSurface(shaftGroup, 14000);
   if (!target) return announceBuilt();
 
   const n = target.length / 3;
@@ -503,17 +504,20 @@ function assemble() {
   const delay = new Float32Array(n);
   const box = new THREE.Box3().setFromObject(shaftGroup);
   const mid = box.getCenter(new THREE.Vector3());
-  const reach = Math.max(0.6, box.getSize(new THREE.Vector3()).length() * 0.28);
+  // Kept deliberately short. Thrown far, the cloud thins out into dust and the
+  // shape it is about to make is unreadable on the way; held close, you can see
+  // the room in it from the first frame.
+  const reach = Math.max(0.28, box.getSize(new THREE.Vector3()).length() * 0.11);
 
   for (let i = 0; i < n; i++) {
-    // Thrown outward from the middle, so it reads as a thing coming together
+    // Pushed outward from the middle, so it reads as a thing coming together
     // rather than as noise resolving.
     const dx = target[i * 3] - mid.x, dz = target[i * 3 + 2] - mid.z;
     const len = Math.hypot(dx, dz) || 1;
-    const push = reach * (0.35 + Math.random() * 0.85);
-    start[i * 3]     += (dx / len) * push + (Math.random() - .5) * reach * .3;
-    start[i * 3 + 1] += reach * (0.15 + Math.random() * 0.7);
-    start[i * 3 + 2] += (dz / len) * push + (Math.random() - .5) * reach * .3;
+    const push = reach * (0.4 + Math.random() * 0.6);
+    start[i * 3]     += (dx / len) * push + (Math.random() - .5) * reach * .35;
+    start[i * 3 + 1] += reach * (0.2 + Math.random() * 0.55);
+    start[i * 3 + 2] += (dz / len) * push + (Math.random() - .5) * reach * .35;
     // Low points land first, so it builds from the floor up.
     delay[i] = Math.min(0.55, (target[i * 3 + 1] - box.min.y) / Math.max(box.max.y - box.min.y, 1e-6) * 0.4)
              + Math.random() * 0.15;
@@ -522,12 +526,15 @@ function assemble() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(start), 3));
   const points = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xd8ab7a, size: 0.02, sizeAttenuation: true,
-    transparent: true, opacity: 0.95, depthWrite: false
+    color: 0x8d5a3a, size: 0.028, sizeAttenuation: true,
+    transparent: true, opacity: 0.9, depthWrite: false
   }));
   scene.add(points);
   shaftGroup.visible = false;
-  assembly = { points, start, target, delay, t0: performance.now(), ms: 1050, landed: false };
+  // The thing being carried arrives once there is somewhere to put it. Watching
+  // a couch hang in mid air while its room assembles around it reads as a bug.
+  if (objectMesh) objectMesh.visible = false;
+  assembly = { points, start, target, delay, t0: performance.now(), ms: 1150, landed: false };
 }
 
 /** Advance the fly-in. Called once per rendered frame. */
@@ -551,8 +558,12 @@ function stepAssembly() {
 
   // The solid appears while the last points are still arriving, and the cloud
   // fades out over the top of it rather than blinking away.
-  if (p > 0.62 && !A.landed) { A.landed = true; shaftGroup.visible = true; }
-  A.points.material.opacity = p < 0.62 ? 0.95 : 0.95 * (1 - (p - 0.62) / 0.38);
+  if (p > 0.58 && !A.landed) {
+    A.landed = true;
+    shaftGroup.visible = true;
+    if (objectMesh) objectMesh.visible = true;
+  }
+  A.points.material.opacity = p < 0.58 ? 0.9 : 0.9 * (1 - (p - 0.58) / 0.42);
   if (p >= 1) { stopAssembly(true); announceBuilt(); }
 }
 
@@ -801,6 +812,10 @@ function placeObject() {
     : new THREE.BoxGeometry(L * IN, H * IN, W * IN);
 
   objectMesh = new THREE.Mesh(geo, mat);
+  // set() rebuilds the shaft and then replaces the object, so a fresh mesh
+  // arrives after the fly-in has already hidden the old one. Without this it
+  // hangs in the air while its room is still assembling underneath.
+  if (assembly && !assembly.landed) objectMesh.visible = false;
   objectMesh.castShadow = true;
   objectMesh.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
