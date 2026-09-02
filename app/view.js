@@ -30,6 +30,10 @@ export const state = {
 };
 
 export function onChange(fn) { state.listeners.push(fn); }
+
+let laidOutCb = null;
+/** Called when the plan has finished walking a new outline on. */
+export function onLaidOut(fn) { laidOutCb = fn; }
 function emit() { for (const fn of state.listeners) fn(state); }
 
 /**
@@ -162,6 +166,39 @@ function reframe() {
   oy = (r.height + drawnH) / 2 - pad * scale * 0.5;
 }
 
+/**
+ * How far through drawing a new outline we are.
+ *
+ * Keyed on the outline itself, so a fresh room walks itself on once and a
+ * redraw during a drag does not restart it. Returns 1 for anything already
+ * finished, and for anyone who has asked for less movement.
+ */
+const drawOn = {
+  key: null,
+  t0: 0,
+  ms: 900,
+  raf: 0,
+  at(poly) {
+    const key = poly.length + ':' + poly.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(';');
+    if (key !== this.key) {
+      this.key = key;
+      this.t0 = performance.now();
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        this.t0 = -this.ms;
+      }
+    }
+    const p = Math.min(1, (performance.now() - this.t0) / this.ms);
+    if (p < 1 && !this.raf) {
+      this.raf = requestAnimationFrame(() => { this.raf = 0; draw(); });
+    } else if (p >= 1 && !this.told) {
+      this.told = true;
+      if (laidOutCb) laidOutCb();
+    }
+    if (p < 1) this.told = false;
+    return 1 - Math.pow(1 - p, 3);
+  }
+};
+
 const px = x => ox + x * scale;
 const py = y => oy - y * scale;
 const inx = X => (X - ox) / scale;
@@ -181,15 +218,51 @@ export function draw() {
 
   // A traced room replaces the L entirely: same renderer, different floor.
   if (state.room && state.room.length >= 3) {
-    ctx.beginPath();
-    state.room.forEach((p, i) => i ? ctx.lineTo(px(p.x), py(p.y)) : ctx.moveTo(px(p.x), py(p.y)));
-    ctx.closePath();
+    // Walk the outline on rather than cutting to it. The plan used to appear
+    // between two frames, so switching from a staircase to a room looked like
+    // a page swap instead of like a floor being laid out from your own clicks.
+    const t = drawOn.at(state.room);
+    const path = new Path2D();
+    state.room.forEach((p, i) => i ? path.lineTo(px(p.x), py(p.y)) : path.moveTo(px(p.x), py(p.y)));
+    path.closePath();
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, (t - 0.45) / 0.55);
     ctx.fillStyle = css('--floor', '#efeae1');
-    ctx.fill();
+    ctx.fill(path);
+    ctx.restore();
+
+    ctx.save();
     ctx.strokeStyle = css('--wall', '#3a352c');
     ctx.lineWidth = 2.5;
-    ctx.stroke();
-    drawObject();
+    ctx.lineJoin = 'round';
+    if (t < 1) {
+      // One dash as long as the walls drawn so far, and a gap for the rest.
+      let per = 0;
+      for (let i = 0; i < state.room.length; i++) {
+        const a = state.room[i], b = state.room[(i + 1) % state.room.length];
+        per += Math.hypot(b.x - a.x, b.y - a.y) * scale;
+      }
+      ctx.setLineDash([per * t, per]);
+    }
+    ctx.stroke(path);
+    ctx.restore();
+
+    // Corners land as they are reached, so you can see the clicks you made.
+    const n = state.room.length;
+    state.room.forEach((p, i) => {
+      const due = i / n;
+      if (t < due) return;
+      const pop = Math.min(1, (t - due) * 7);
+      ctx.beginPath();
+      ctx.arc(px(p.x), py(p.y), 2.5 + 3 * (1 - pop), 0, Math.PI * 2);
+      ctx.fillStyle = css('--pinch', '#a3341f');
+      ctx.globalAlpha = 0.25 + 0.75 * pop;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+
+    if (t >= 0.75) drawObject();
     return;
   }
 

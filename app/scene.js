@@ -175,6 +175,7 @@ function resize() {
 function loop() {
   raf = requestAnimationFrame(loop);
   controls.update();
+  stepAssembly();
   // A slow pulse while the pose is clear, so a good position announces itself
   // rather than waiting to be read off the sidebar.
   if (objectMesh && !M.touching) {
@@ -406,9 +407,157 @@ function buildRoom() {
   scene.add(shaftGroup);
   placeObject();
   frameAll();
+  assemble();
+}
+
+/* ------------------------------------------------------------------ *
+ * Watching it come together.
+ *
+ * Building a shaft or a room takes a few milliseconds, so it used to appear
+ * between two frames and you could not tell whether anything had happened.
+ * Switching from a staircase to a traced room in particular just swapped one
+ * picture for another. Now the surfaces are sampled into a cloud of points that
+ * flies in and settles, and the solid appears underneath as they land, so the
+ * change is something you watch rather than something you notice afterwards.
+ *
+ * It is decoration over a mesh that is already finished. Nothing here computes
+ * geometry, and nothing waits for it.
+ * ------------------------------------------------------------------ */
+
+let assembly = null;
+let builtCb = null;
+
+/** Called when a shaft or room has finished assembling, animation and all. */
+export function onBuilt(fn) { builtCb = fn; }
+function announceBuilt() { if (builtCb) builtCb(); }
+
+/** Points spread over the triangles of a mesh, in proportion to their area. */
+function sampleSurface(group, want) {
+  const tri = [];
+  let total = 0;
+  group.updateMatrixWorld(true);
+  group.traverse(o => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const g = o.geometry;
+    const pos = g.attributes.position;
+    const idx = g.index;
+    const n = idx ? idx.count : pos.count;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    for (let i = 0; i + 2 < n; i += 3) {
+      const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1,
+            i2 = idx ? idx.getX(i + 2) : i + 2;
+      a.fromBufferAttribute(pos, i0).applyMatrix4(o.matrixWorld);
+      b.fromBufferAttribute(pos, i1).applyMatrix4(o.matrixWorld);
+      c.fromBufferAttribute(pos, i2).applyMatrix4(o.matrixWorld);
+      const area = new THREE.Vector3().subVectors(b, a)
+        .cross(new THREE.Vector3().subVectors(c, a)).length() / 2;
+      if (!isFinite(area) || area <= 0) continue;
+      total += area;
+      tri.push({ a: a.clone(), b: b.clone(), c: c.clone(), area });
+    }
+  });
+  if (!tri.length || total <= 0) return null;
+
+  const out = new Float32Array(want * 3);
+  let k = 0;
+  for (const t of tri) {
+    // Area-weighted, so a big wall gets its share and a doorpost does not
+    // hog the cloud. At least one point each, so nothing vanishes.
+    let n = Math.max(1, Math.round(want * (t.area / total)));
+    while (n-- > 0 && k < want) {
+      let u = Math.random(), v = Math.random();
+      if (u + v > 1) { u = 1 - u; v = 1 - v; }
+      out[k * 3]     = t.a.x + (t.b.x - t.a.x) * u + (t.c.x - t.a.x) * v;
+      out[k * 3 + 1] = t.a.y + (t.b.y - t.a.y) * u + (t.c.y - t.a.y) * v;
+      out[k * 3 + 2] = t.a.z + (t.b.z - t.a.z) * u + (t.c.z - t.a.z) * v;
+      k++;
+    }
+    if (k >= want) break;
+  }
+  return k < 32 ? null : out.slice(0, k * 3);
+}
+
+function stopAssembly(land) {
+  if (!assembly) return;
+  if (land && shaftGroup) shaftGroup.visible = true;
+  scene.remove(assembly.points);
+  assembly.points.geometry.dispose();
+  assembly.points.material.dispose();
+  assembly = null;
+}
+
+/** Scatter the surface into the air and let it fall back into place. */
+function assemble() {
+  stopAssembly(true);
+  if (!shaftGroup || !scene) return announceBuilt();
+  // Someone who has asked for less movement gets the finished thing at once.
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return announceBuilt();
+  }
+
+  const target = sampleSurface(shaftGroup, 4200);
+  if (!target) return announceBuilt();
+
+  const n = target.length / 3;
+  const start = new Float32Array(target);
+  const delay = new Float32Array(n);
+  const box = new THREE.Box3().setFromObject(shaftGroup);
+  const mid = box.getCenter(new THREE.Vector3());
+  const reach = Math.max(0.6, box.getSize(new THREE.Vector3()).length() * 0.28);
+
+  for (let i = 0; i < n; i++) {
+    // Thrown outward from the middle, so it reads as a thing coming together
+    // rather than as noise resolving.
+    const dx = target[i * 3] - mid.x, dz = target[i * 3 + 2] - mid.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const push = reach * (0.35 + Math.random() * 0.85);
+    start[i * 3]     += (dx / len) * push + (Math.random() - .5) * reach * .3;
+    start[i * 3 + 1] += reach * (0.15 + Math.random() * 0.7);
+    start[i * 3 + 2] += (dz / len) * push + (Math.random() - .5) * reach * .3;
+    // Low points land first, so it builds from the floor up.
+    delay[i] = Math.min(0.55, (target[i * 3 + 1] - box.min.y) / Math.max(box.max.y - box.min.y, 1e-6) * 0.4)
+             + Math.random() * 0.15;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(start), 3));
+  const points = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xd8ab7a, size: 0.02, sizeAttenuation: true,
+    transparent: true, opacity: 0.95, depthWrite: false
+  }));
+  scene.add(points);
+  shaftGroup.visible = false;
+  assembly = { points, start, target, delay, t0: performance.now(), ms: 1050, landed: false };
+}
+
+/** Advance the fly-in. Called once per rendered frame. */
+function stepAssembly() {
+  if (!assembly) return;
+  const A = assembly;
+  const p = Math.min(1, (performance.now() - A.t0) / A.ms);
+  const pos = A.points.geometry.attributes.position.array;
+  const n = pos.length / 3;
+
+  for (let i = 0; i < n; i++) {
+    const d = A.delay[i];
+    const k = Math.max(0, Math.min(1, (p - d) / (1 - d)));
+    const e = 1 - Math.pow(1 - k, 3);          // ease out, so they settle
+    for (let j = 0; j < 3; j++) {
+      const s = A.start[i * 3 + j], t = A.target[i * 3 + j];
+      pos[i * 3 + j] = s + (t - s) * e;
+    }
+  }
+  A.points.geometry.attributes.position.needsUpdate = true;
+
+  // The solid appears while the last points are still arriving, and the cloud
+  // fades out over the top of it rather than blinking away.
+  if (p > 0.62 && !A.landed) { A.landed = true; shaftGroup.visible = true; }
+  A.points.material.opacity = p < 0.62 ? 0.95 : 0.95 * (1 - (p - 0.62) / 0.38);
+  if (p >= 1) { stopAssembly(true); announceBuilt(); }
 }
 
 function build() {
+  stopAssembly(false);
   if (shaftGroup) scene.remove(shaftGroup);
   shaftGroup = new THREE.Group();
 
@@ -613,6 +762,7 @@ function build() {
   scene.add(shaftGroup);
   placeObject();
   frameAll();
+  assemble();
 }
 
 /* ------------------------------------------------------------------ *

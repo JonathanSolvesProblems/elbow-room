@@ -135,6 +135,15 @@
             font-size:12.5px; margin-bottom:1rem; }
   body[data-webmcp="present"] .banner { display:none; }
   code { font-size:11.5px; }
+  /* The fork nobody found. Trace the room sat unmarked in the middle of the
+     sidebar, so a hallway video got measured as a staircase and saved as one. */
+  .fork { border:1px solid var(--ok); border-radius:9px; padding:.85rem .9rem; margin:1rem 0;
+          background:var(--okfill); }
+  .fork strong { display:block; margin-bottom:.25rem; }
+  .fork p { margin:0 0 .6rem; font-size:12.5px; color:var(--mut); }
+  .fork button { display:block; width:100%; margin:0 0 .35rem; text-align:left; font-weight:600;
+                 border-color:var(--ok); }
+  .fork button:last-child { margin-bottom:0; }
 </style>
 </head>
 <body>
@@ -229,6 +238,14 @@
     <button id="undo" hidden style="margin-top:.35rem">Undo</button>
     <button id="redo" hidden style="margin-top:.35rem">Redo the corners</button>
     <p class="note" id="planewarn" hidden style="margin-top:.4rem;color:#c9902f"></p>
+    </div>
+
+    <div id="fork" class="fork" hidden>
+      <strong>What did you film?</strong>
+      <p>The plane is set, so every pixel on that surface is inches now. What comes next depends
+        on what you are measuring, and they are two different things.</p>
+      <button id="forkStairs" type="button">A staircase &mdash; measure its spans</button>
+      <button id="forkRoom" type="button">A room &mdash; trace its floor</button>
     </div>
 
     <div id="roomBox" hidden>
@@ -1286,7 +1303,35 @@ document.getElementById('traceSquare').onclick = () => {
   draw();
 };
 
+/**
+ * Which of the two things is being measured.
+ *
+ * A staircase wants spans and step counts; a room wants an outline. Both were
+ * on the page, unmarked, and the room half sat below a paragraph of prose, so a
+ * hallway got measured against "clear width of the run" and saved as a
+ * staircase called Main room. Now the page asks, once, at the moment the plane
+ * is set and the question actually arises.
+ */
+let forked = false;
+
+document.getElementById('forkRoom').onclick = () => {
+  forked = true;
+  outline = []; squared = null; hiddenPicks = null;
+  setTracing(true);
+  document.getElementById('roomBox').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  document.getElementById('roomState').textContent =
+    'Tracing. Click each corner where a wall meets the floor, all the way round, ' +
+    'then press Close the outline.';
+};
+
+document.getElementById('forkStairs').onclick = () => {
+  forked = true;
+  readout();
+  document.getElementById('field').scrollIntoView({ block: 'center', behavior: 'smooth' });
+};
+
 document.getElementById('traceStart').onclick = () => {
+  forked = true;
   outline = []; squared = null; hiddenPicks = null; setTracing(true);
 };
 document.getElementById('traceClose').onclick = () => {
@@ -1649,6 +1694,10 @@ function steps() {
   if (redo) redo.hidden = !S.image || S.refPoints.length === 0;
   const rb = document.getElementById('roomBox');
   if (rb) rb.hidden = !S.H && !tracing;
+  // Asked once, as soon as the plane exists and before any choice has been
+  // made. It goes away the moment either path is taken.
+  const fk = document.getElementById('fork');
+  if (fk) fk.hidden = !S.H || tracing || outline.length > 0 || forked;
   const hint = document.getElementById('frameHint');
   if (hint && S.H) hint.hidden = true;
 
@@ -2299,8 +2348,13 @@ document.getElementById('saveSession').onclick = async () => {
   } else {
     el.style.color = 'var(--ok)';
     el.style.borderColor = 'var(--ok)';
-    el.textContent = `${name} saved: ${n} reading${n === 1 ? '' : 's'}` +
-      (kept ? `, ${frames.length} frames` : '') + `, and the step counts.`;
+    // Say what kind of thing was saved. Someone who filmed a hallway, measured
+    // its floor and called it Main room got a green tick here and then a
+    // staircase in the planner, with nothing in between to explain why.
+    el.textContent = `${name} saved as a staircase: ${n} reading${n === 1 ? '' : 's'}` +
+      (kept ? `, ${frames.length} frames` : '') + `, and the step counts. ` +
+      `If you meant a room, press Start tracing the floor, click round where the walls meet ` +
+      `the floor, close the outline, and save it again.`;
   }
   setTimeout(() => { el.hidden = true; }, n ? 7000 : 14000);
 };

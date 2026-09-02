@@ -554,8 +554,36 @@ export function boot() {
     return list;
   };
 
+  /**
+   * Say that something is being put together.
+   *
+   * Switching places rebuilds both drawings, and until now that happened in the
+   * gap between two frames with nothing on screen to say so. Coming back from
+   * the measure page is worse, because a whole page load sits in front of it.
+   */
+  const showBuilding = what => {
+    const room = what === 'your room';
+    for (const [id, text, show] of [
+      ['planbuild', `Laying out ${what} in plan`, room],
+      ['solidbuild', `Building ${what} in three dimensions`, true]
+    ]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      // Only the room walks its outline on, so only the room's plan has a wait
+      // worth naming. A staircase plan is four lines and is there already.
+      const span = el.querySelector('span');
+      if (span && show) span.textContent = text;
+      el.hidden = !show;
+    }
+  };
+  // Each drawing puts its own notice away as it finishes, so neither waits on
+  // the other and neither is guessed at with a timer.
+  solid.onBuilt(() => { const e = document.getElementById('solidbuild'); if (e) e.hidden = true; });
+  view.onLaidOut(() => { const e = document.getElementById('planbuild'); if (e) e.hidden = true; });
+
   /** Put a staircase on the page: its numbers, its shape, its photograph. */
   function useStaircase(entry) {
+    showBuilding(entry.room ? 'your room' : 'the staircase');
     // A traced room is a different kind of place, not a differently sized
     // staircase, so it replaces the model rather than editing it.
     app.room = entry.room || null;
@@ -685,11 +713,23 @@ export function boot() {
         sw.textContent = `${on.name} has no measurements in it, so this is the default shape ` +
           `wearing your photograph. Go back to Measure yours, take a reading, press Save this ` +
           `reading, then save the staircase again.`;
+      } else if (on.measured < 3) {
+        // One or two readings leave most of the shaft at my numbers, and the
+        // page said "everything below is computed from this one" anyway, which
+        // is how a hallway video ended up looking like my basement.
+        sw.style.color = 'var(--pinch)';
+        sw.textContent = `${on.name} has ${on.measured} reading` +
+          `${on.measured === 1 ? '' : 's'} in it, so most of this shape is still the default ` +
+          `one. Measure the turn and the run to make it yours. If what you filmed was a room ` +
+          `rather than a staircase, trace its floor on the measure page instead: that builds ` +
+          `an outline from your own clicks, and nothing here will fit it.`;
       } else {
         sw.textContent = 'Everything below is computed from this one. Kept in this browser only.';
       }
     }
   }
+
+  showBuilding('the staircase');
 
   const onMine = new URLSearchParams(location.search).has('mine');
   const mine = loadMine();

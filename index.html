@@ -51,6 +51,18 @@
   .pane { position:relative; background:var(--bg); min-height:0; overflow:hidden; }
   .panelabel { position:absolute; top:.7rem; left:.9rem; z-index:2; font-size:10.5px;
                text-transform:uppercase; letter-spacing:.09em; color:var(--mut); pointer-events:none; }
+  /* Shown while a shaft or a room is being put together, so the wait has a
+     name instead of being a blank pane you assume is broken. */
+  .building { position:absolute; inset:auto 0 1.1rem 0; z-index:4; display:flex;
+              justify-content:center; pointer-events:none; }
+  .building span { background:var(--card); border:1px solid var(--line); border-radius:999px;
+                   padding:.34rem .85rem; font-size:12px; color:var(--fg);
+                   box-shadow:0 2px 10px rgba(0,0,0,.14); display:flex; align-items:center;
+                   gap:.5rem; }
+  .building span::before { content:''; width:9px; height:9px; border-radius:50%;
+                           background:var(--pinch); animation:beat .9s ease-in-out infinite; }
+  @keyframes beat { 0%,100% { opacity:.25; transform:scale(.7) } 50% { opacity:1; transform:scale(1) } }
+  @media (prefers-reduced-motion: reduce) { .building span::before { animation:none; opacity:.8 } }
   .tabs { position:absolute; top:.6rem; right:.7rem; z-index:5; display:flex; gap:.15rem;
           background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.15rem; }
   .tabs button { font:inherit; font-size:12px; padding:.28rem .7rem; border:0; border-radius:6px;
@@ -162,11 +174,13 @@
     <div class="pane" data-pane="plan">
       <span class="panelabel" id="planlabel">Plan · looking down on the turn</span>
       <canvas id="cv"></canvas>
+      <div class="building" id="planbuild" hidden><span>Laying out the floor plan</span></div>
       <div class="hint">Drag to move. Scroll to rotate.</div>
     </div>
     <div class="pane" data-pane="solid">
       <span class="panelabel" id="solidlabel">The shaft · drag to orbit, scroll to zoom</span>
       <canvas id="solid"></canvas>
+      <div class="building" id="solidbuild" hidden><span>Building it in three dimensions</span></div>
       <div class="viewctl">
         <button data-mode="orbit" class="on" title="Orbit the view">Orbit</button>
         <button data-mode="move" title="Carry the object">Carry</button>
