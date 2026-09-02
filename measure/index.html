@@ -1138,7 +1138,12 @@ function renderMarks() {
   const rows = Object.entries(saved);
   const stair = rows.filter(([k]) => !isObject(k));
   const obj = rows.filter(([k]) => isObject(k));
-  const li = ([k, v]) => `<li><span>${LABEL[k] || k}</span><span>${ft(v)}</span></li>`;
+  // Counts are counts. Rendering run.treads through the foot formatter put
+  // "steps 9 inches" in the list, which is nonsense and the sort of thing that
+  // makes every other number on the page look untrustworthy.
+  const isCount = k => k.endsWith('treads');
+  const li = ([k, v]) =>
+    `<li><span>${LABEL[k] || k}</span><span>${isCount(k) ? Math.round(v) : ft(v)}</span></li>`;
   document.getElementById('marks').innerHTML = stair.map(li).join('');
   document.getElementById('objMarks').innerHTML = obj.map(li).join('');
   document.getElementById('objBox').hidden = obj.length === 0;
