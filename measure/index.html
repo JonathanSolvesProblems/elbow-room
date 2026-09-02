@@ -1580,10 +1580,23 @@ document.getElementById('send').onclick = () => {
 
 document.getElementById('reset').onclick = async () => {
   S.reset(); pending = null; last = null;
+  S.image = null;
   gallery.length = 0;
   renderStrip();
   await forgetWork();
-  draw(); steps(); readout();
+
+  // And put the drop zone back. Clearing the readings while leaving the old
+  // photograph on the canvas left nowhere to load a different one from.
+  cv.hidden = true;
+  document.getElementById('pano').hidden = true;
+  document.getElementById('flatBox').hidden = false;
+  document.getElementById('panoBox').hidden = true;
+  document.getElementById('scrub').hidden = true;
+  document.getElementById('advice').hidden = true;
+  document.getElementById('opened').hidden = true;
+  drop.hidden = false;
+  drop.style.borderColor = '';
+  steps(); readout();
 };
 
 S.onChange(() => { draw(); steps(); readout(); rememberWork(); });
