@@ -1043,36 +1043,40 @@ function grab(p) {
   return best;
 }
 
-let dragging = null;
-let justDragged = false;
+// A click is a click and a drag is a drag. Committing to the drag on
+// pointerdown meant a point could never be clicked *through*, so measuring from
+// the corner of your own reference became impossible. Nothing moves until the
+// pointer has actually travelled.
+let candidate = null, startedAt = null, dragging = null, justDragged = false;
+const SLOP = 4;
 
 cv.addEventListener('pointerdown', e => {
   if (!S.image) return;
   const p = at(e);
-  // Only points that already exist can be dragged; a fresh click still places.
-  const holder = grab(p);
-  if (holder) {
-    dragging = holder;
-    cv.setPointerCapture(e.pointerId);
-    cv.style.cursor = 'grabbing';
-    e.preventDefault();
-  }
+  candidate = grab(p);
+  startedAt = p;
+  if (candidate) cv.setPointerCapture(e.pointerId);
 });
 
 cv.addEventListener('pointermove', e => {
+  const p = at(e);
   if (!dragging) {
-    if (S.image) cv.style.cursor = grab(at(e)) ? 'grab' : 'crosshair';
-    return;
+    if (candidate && startedAt && Math.hypot(p.x - startedAt.x, p.y - startedAt.y) > SLOP) {
+      dragging = candidate;
+      cv.style.cursor = 'grabbing';
+    } else {
+      if (S.image && !candidate) cv.style.cursor = grab(p) ? 'grab' : 'crosshair';
+      return;
+    }
   }
-  dragging(at(e));
+  dragging(p);
   draw(); steps(); readout();
 });
 
 const dropPoint = () => {
-  if (!dragging) return;
-  dragging = null;
+  if (dragging) { justDragged = true; draw(); steps(); readout(); }
+  dragging = null; candidate = null; startedAt = null;
   cv.style.cursor = 'crosshair';
-  draw(); steps(); readout();
 };
 cv.addEventListener('pointerup', dropPoint);
 cv.addEventListener('pointercancel', dropPoint);
@@ -1081,14 +1085,11 @@ cv.onclick = e => {
   // A drag ends with a click event; that click must not place a fifth point.
   if (justDragged) { justDragged = false; return; }
   const p = at(e);
-  if (grab(p) && (S.refPoints.length >= 4)) return;   // picking up, not placing
   if (S.refPoints.length < 4) { S.addPoint(p); }
   else if (!pending) { pending = p; }
   else { last = S.measure(pending, p); pending = null; }
   draw(); steps(); readout();
 };
-
-cv.addEventListener('pointerup', () => { if (dragging) justDragged = true; }, true);
 
 /* ---------- drawing ---------- */
 
