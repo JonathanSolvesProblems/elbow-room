@@ -27,14 +27,21 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { display:grid; grid-template-columns:1fr 23rem; min-height:100vh; }
+  .wrap { display:grid; grid-template-columns:1fr 23rem; min-height:100vh;
+          align-items:start; }
   @media (max-width:900px) { .wrap { grid-template-columns:1fr; } }
 
-  /* Top aligned, not centred. Centring meant the picture slid up and down the
-     moment the sidebar grew a line, which it does exactly when the fourth
-     corner lands, so the photograph moved under the cursor mid-calibration. */
-  .stage { position:relative; display:grid; justify-items:center; align-content:start;
-           padding:1rem; }
+  /* Centred inside a column of its own height, and stuck there.
+     Centring against the page made the photograph slide the moment the sidebar
+     grew a line, which happens exactly when the fourth corner lands. Top
+     aligning fixed that and left the picture stranded above a field of black.
+     A sticky, viewport-tall column is both: the sidebar can grow and scroll all
+     it likes, and the photograph stays put, centred, where you are working. */
+  .stage { position:sticky; top:0; align-self:start; height:100vh;
+           display:grid; justify-items:center; align-content:center; padding:1rem; }
+  @media (max-width:900px) {
+    .stage { position:static; height:auto; align-content:start; }
+  }
   #pano { width:100%; height:calc(100vh - 5rem); border-radius:10px;
           border:1px solid var(--line); cursor:crosshair; touch-action:none; }
   canvas { max-width:100%; max-height:calc(100vh - 2rem); border-radius:10px;

@@ -261,6 +261,28 @@ function loadObject() {
   return { label: app.current.label, L, D, H };
 }
 
+/**
+ * The staircase exactly as it shipped.
+ *
+ * Switching between staircases has to be able to go back, and every reading
+ * written into the model overwrites the value, the source and the note. Taken
+ * once, before anything can touch it, so restoring is exact rather than
+ * approximate.
+ */
+const BASE_LABEL = STAIRCASE.label;
+const BASE = (() => {
+  const out = {};
+  const walk = (node, path) => {
+    for (const [k, v] of Object.entries(node)) {
+      if (!v || typeof v !== 'object') continue;
+      if ('value' in v) out[[...path, k].join('.')] = { value: v.value, source: v.source, note: v.note };
+      else if (!Array.isArray(v)) walk(v, [...path, k]);
+    }
+  };
+  walk({ clearWidth: STAIRCASE.clearWidth, run: STAIRCASE.run, turn: STAIRCASE.turn }, []);
+  return out;
+})();
+
 export function boot() {
   view.state.a = STAIRCASE.turn.widthA.value;
   view.state.b = STAIRCASE.turn.widthB.value;
@@ -411,23 +433,140 @@ export function boot() {
   view.onChange(() => app.emit());
 
   app.select(CATALOGUE[0].id);
-  // A switch that is always on the page, so going between the staircase you
-  // measured and the one this app was built for is one click either way,
-  // instead of a link that only appears in the banner.
-  const onMine = new URLSearchParams(location.search).has('mine');
-  let hasOwn = false;
-  try { hasOwn = !!localStorage.getItem('elbowroom.staircase'); } catch { hasOwn = false; }
-  const sw = document.getElementById('switch');
-  if (sw && (hasOwn || onMine)) {
-    sw.hidden = false;
-    sw.innerHTML = onMine
-      ? 'Showing the staircase you measured. <a href="/">Show the 1970s house instead</a>.'
-      : 'Showing the 1970s house. <a href="/?mine=1">Show the staircase you measured</a>.';
+  /* ------------------------------------------------------------------ *
+   * Which staircase.
+   *
+   * One demo house, whatever you measured last, and every staircase you named
+   * and kept. All in one list, one click each, with the demo permanent and the
+   * imports removable. This replaces a URL flag that only ever toggled between
+   * two of them and could not name any.
+   * ------------------------------------------------------------------ */
+  const ACTIVE = 'elbowroom.active';
+
+  const readJson = (k, fallback) => {
+    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }
+    catch { return fallback; }
+  };
+
+  /** Everything the picker can offer, demo first. */
+  const staircases = () => {
+    const list = [{ id: '', name: 'The 1970s house', note: 'the one this app was built for',
+                    fixed: true }];
+    const working = readJson('elbowroom.staircase', null);
+    if (working && Object.keys(working).length) {
+      list.push({ id: '__working', name: 'What you just measured',
+                  note: `${Object.keys(working).length} readings`,
+                  readings: working, fixed: true });
+    }
+    for (const x of readJson('elbowroom.sessions', []) || []) {
+      if (x && x.name) {
+        list.push({ id: 'saved:' + x.name, name: x.name,
+                    note: `${Object.keys(x.readings || {}).length} readings` +
+                          (x.frames ? `, ${x.frames} frames` : ''),
+                    readings: x.readings, counts: x.counts, photo: x.photo });
+      }
+    }
+    return list;
+  };
+
+  /** Put a staircase on the page: its numbers, its shape, its photograph. */
+  function useStaircase(entry) {
+    // Back to the model as shipped, then apply whatever this one overrides, so
+    // switching never leaves a previous staircase's numbers behind.
+    for (const [path, spec] of Object.entries(BASE)) {
+      let t = app.stairModel;
+      const keys = path.split('.');
+      for (const k of keys.slice(0, -1)) t = t[k];
+      Object.assign(t[keys[keys.length - 1]], spec);
+    }
+    STAIRCASE.label = BASE_LABEL;
+    solid.setSkin(null);
+
+    let n = 0;
+    const readings = { ...(entry.readings || {}), ...(entry.counts || {}) };
+    for (const [field, inches] of Object.entries(readings)) {
+      if (typeof inches !== 'number' || !isFinite(inches) || inches <= 0) continue;
+      const counted = /treads$/.test(field);
+      if (app.setStairMeasurement(field, counted ? Math.round(inches) : inches,
+          counted ? 'Counted on your own staircase.'
+                  : 'Measured from your own photograph on /measure.')) n++;
+    }
+    if (n) STAIRCASE.label = entry.name;
+    app.stair = plain(STAIRCASE);
+    view.state.a = app.stairModel.turn.widthA.value;
+    view.state.b = app.stairModel.turn.widthB.value;
+
+    if (entry.photo) solid.setSkin(entry.photo);
+    else if (entry.id === '__working') {
+      try { const sk = localStorage.getItem('elbowroom.photo'); if (sk) solid.setSkin(sk); }
+      catch { /* no skin kept */ }
+    }
+    try { localStorage.setItem(ACTIVE, entry.id); } catch { /* private mode */ }
+    app.sync();
+    renderPicker();
+    return n;
   }
 
+  function renderPicker() {
+    const el = document.getElementById('picker');
+    if (!el) return;
+    const active = (() => { try { return localStorage.getItem(ACTIVE) || ''; } catch { return ''; } })();
+    const list = staircases();
+    el.innerHTML = '';
+    for (const x of list) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const b = document.createElement('button');
+      b.className = 'pick';
+      b.type = 'button';
+      b.setAttribute('aria-current', String(x.id === active));
+      b.innerHTML = `${x.name.replace(/</g, '&lt;')}<small>${x.note}</small>`;
+      b.onclick = () => useStaircase(x);
+      row.appendChild(b);
+      if (!x.fixed) {
+        const d = document.createElement('button');
+        d.className = 'drop';
+        d.type = 'button';
+        d.textContent = 'remove';
+        d.title = `Forget ${x.name}`;
+        d.onclick = () => {
+          const rest = (readJson('elbowroom.sessions', []) || []).filter(s => s.name !== x.name);
+          try { localStorage.setItem('elbowroom.sessions', JSON.stringify(rest)); } catch { /* none */ }
+          try { indexedDB.open('elbowroom', 1).onsuccess = e => {
+            const db = e.target.result;
+            if (db.objectStoreNames.contains('frames')) {
+              db.transaction('frames', 'readwrite').objectStore('frames').delete(x.name);
+            }
+          }; } catch { /* nothing kept */ }
+          if (active === x.id) useStaircase(list[0]);
+          else renderPicker();
+        };
+        row.appendChild(d);
+      }
+      el.appendChild(row);
+    }
+    const sw = document.getElementById('switch');
+    if (sw) {
+      const on = list.find(x => x.id === active) || list[0];
+      sw.textContent = on.id
+        ? 'Everything below is computed from this one. Kept in this browser only.'
+        : 'The staircase this app was built for. Measure your own to add it here.';
+    }
+  }
+
+  const onMine = new URLSearchParams(location.search).has('mine');
   const mine = loadMine();
   const carried = loadObject();
   if (mine || carried) app.sync();
+  if (onMine) { try { localStorage.setItem(ACTIVE, '__working'); } catch { /* none */ } }
+  else {
+    // Whatever was chosen last, so the planner opens where you left it.
+    let want = '';
+    try { want = localStorage.getItem(ACTIVE) || ''; } catch { want = ''; }
+    const found = staircases().find(x => x.id === want);
+    if (found && found.id) useStaircase(found);
+  }
+  renderPicker();
   // A newly arrived object has to be parked for its own size. Without this it
   // sat where the previous object had been parked, so Reset, which parks
   // correctly, appeared to move it somewhere new.
