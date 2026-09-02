@@ -1155,6 +1155,89 @@ function renderMarks() {
  * photograph is the one thing a person does better than a homography.
  * ---------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------- *
+ * Where the frames live.
+ *
+ * A session is worth reopening only if the pictures come back with it, and a
+ * decoded clip is a dozen frames of a megabyte or so. That is far past what a
+ * browser will keep in localStorage, which is why the first version kept one
+ * frame and dropped the rest. IndexedDB has room for all of them, so it holds
+ * the strip and localStorage keeps only the small things.
+ *
+ * Everything here is still in this browser. Nothing is uploaded.
+ * ---------------------------------------------------------------------- */
+
+const DB = 'elbowroom';
+const STORE_FRAMES = 'frames';
+
+function withDb() {
+  return new Promise((res, rej) => {
+    let req;
+    try { req = indexedDB.open(DB, 1); } catch (e) { return rej(e); }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_FRAMES)) db.createObjectStore(STORE_FRAMES);
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error || new Error('indexedDB unavailable'));
+  });
+}
+
+async function putFrames(key, frames) {
+  try {
+    const db = await withDb();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(STORE_FRAMES, 'readwrite');
+      tx.objectStore(STORE_FRAMES).put(frames, key);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+    return true;
+  } catch { return false; }
+}
+
+async function getFrames(key) {
+  try {
+    const db = await withDb();
+    const out = await new Promise((res, rej) => {
+      const tx = db.transaction(STORE_FRAMES, 'readonly');
+      const r = tx.objectStore(STORE_FRAMES).get(key);
+      r.onsuccess = () => res(r.result || null);
+      r.onerror = () => rej(r.error);
+    });
+    db.close();
+    return out;
+  } catch { return null; }
+}
+
+async function dropFrames(key) {
+  try {
+    const db = await withDb();
+    await new Promise(res => {
+      const tx = db.transaction(STORE_FRAMES, 'readwrite');
+      tx.objectStore(STORE_FRAMES).delete(key);
+      tx.oncomplete = res;
+      tx.onerror = res;
+    });
+    db.close();
+  } catch { /* nothing kept */ }
+}
+
+/** Everything currently in the strip, shrunk enough to be worth keeping. */
+function galleryAsFrames() {
+  return gallery.map(g => {
+    const c = document.createElement('canvas');
+    const k = Math.min(1, 900 / Math.max(g.img.width, g.img.height));
+    c.width = Math.max(2, (g.img.width * k) | 0);
+    c.height = Math.max(2, (g.img.height * k) | 0);
+    c.getContext('2d').drawImage(g.img, 0, 0, c.width, c.height);
+    let url = null;
+    try { url = c.toDataURL('image/jpeg', 0.7); } catch { url = null; }
+    return url ? { name: g.name, url } : null;
+  }).filter(Boolean);
+}
+
 const SESSIONS = 'elbowroom.sessions';
 const PHOTO = 'elbowroom.photo';
 
@@ -1183,12 +1266,53 @@ function writeSessions(list) {
   try { localStorage.setItem(SESSIONS, JSON.stringify(list)); } catch { /* full or private */ }
 }
 
+/** Bring a saved staircase back, pictures and all. */
+async function openSession(x, n, say) {
+  Loader.show('Opening ' + x.name, [
+    'Reading the frames you kept',
+    'Scoring them again',
+    'Ready to carry on'
+  ]);
+  try {
+    const stored = await getFrames(x.name);
+    const list = stored && stored.length ? stored : (x.photo ? [{ name: x.name, url: x.photo }] : []);
+    if (!list.length) {
+      Loader.clear();
+      return say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}. No pictures were kept with it.`);
+    }
+    gallery.length = 0;
+    for (let i = 0; i < list.length; i++) {
+      Loader.at(0, 8 + (i / list.length) * 60, `Frame ${i + 1} of ${list.length}`);
+      await breathe();
+      const img = await asImage(await (await fetch(list[i].url)).blob());
+      if (img) gallery.push({ img, name: list[i].name || `frame ${i + 1}`, a: assess(img) });
+    }
+    if (!gallery.length) {
+      Loader.fail(`The pictures kept with ${x.name} would not decode. Its readings are back.`);
+      return say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, without its pictures.`);
+    }
+    Loader.at(1, 78, `${gallery.length} frame${gallery.length === 1 ? '' : 's'}`);
+    await breathe();
+    gallery.sort((p, q) => q.a.sharpness - p.a.sharpness);
+    renderStrip();
+    useImage(gallery[0]);
+    Loader.done();
+    say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, ` +
+        `${x.counts ? x.counts['run.treads'] : '?'} steps, and ` +
+        `${gallery.length} frame${gallery.length === 1 ? '' : 's'} back on screen.`);
+  } catch (e) {
+    Loader.fail(`Could not reopen ${x.name}. ${String((e && e.message) || e).slice(0, 100)}`);
+  }
+}
+
 function renderSessions() {
   const list = readSessions();
   const ul = document.getElementById('sessions');
   document.getElementById('noSessions').hidden = list.length > 0;
   ul.innerHTML = list.map((x, i) =>
-    `<li><span>${String(x.name).slice(0, 30).replace(/</g, '&lt;')}</span>` +
+    `<li><span>${String(x.name).slice(0, 26).replace(/</g, '&lt;')}` +
+    `<small style="color:var(--mut);display:block">${Object.keys(x.readings || {}).length} readings` +
+    `${x.frames ? ', ' + x.frames + ' frames' : ''}</small></span>` +
     `<span><a href="#" data-load="${i}">open</a> &middot; ` +
     `<a href="#" data-drop="${i}" style="color:var(--mut)">remove</a></span></li>`).join('');
   ul.querySelectorAll('[data-load]').forEach(a => {
@@ -1221,30 +1345,14 @@ function renderSessions() {
         clearTimeout(say._t);
         say._t = setTimeout(() => { el.hidden = true; }, 9000);
       };
-      if (x.photo) {
-        Loader.show('Opening ' + x.name, ['Reading the frame you measured on', 'Ready to carry on']);
-        const img = new Image();
-        img.onload = () => {
-          Loader.at(1, 80, `${img.width} by ${img.height}`);
-          useImage({ img, name: x.name, a: assess(img) });
-          Loader.done();
-          say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, ` +
-              `${x.counts ? x.counts['run.treads'] : '?'} steps, and the frame you measured on.`);
-        };
-        img.onerror = () => {
-          Loader.fail('That session’s frame could not be decoded, but its readings are back.');
-          say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}. Its photograph would not decode.`);
-        };
-        img.src = x.photo;
-      } else {
-        say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}. No photograph was kept with it.`);
-      }
+      openSession(x, n, say);
     };
   });
   ul.querySelectorAll('[data-drop]').forEach(a => {
     a.onclick = e => {
       e.preventDefault();
       const list2 = readSessions();
+      dropFrames(list2[+a.dataset.drop] && list2[+a.dataset.drop].name);
       list2.splice(+a.dataset.drop, 1);
       writeSessions(list2);
       renderSessions();
@@ -1252,19 +1360,30 @@ function renderSessions() {
   });
 }
 
-document.getElementById('saveSession').onclick = () => {
+document.getElementById('saveSession').onclick = async () => {
   const name = (document.getElementById('sessionName').value || '').trim() || 'My staircase';
   const list = readSessions().filter(x => x.name !== name);
+  const frames = galleryAsFrames();
+  const kept = frames.length ? await putFrames(name, frames) : false;
   list.unshift({
     name,
     savedAt: new Date().toISOString().slice(0, 10),
     readings: { ...saved },
     counts: counts(),
-    photo: frameAsPhoto()
+    photo: frameAsPhoto(),
+    frames: kept ? frames.length : 0
   });
-  writeSessions(list.slice(0, 8));
+  const trimmed = list.slice(0, 8);
+  for (const gone of list.slice(8)) dropFrames(gone.name);
+  writeSessions(trimmed);
   document.getElementById('sessionName').value = '';
   renderSessions();
+  const el = document.getElementById('opened');
+  el.hidden = false;
+  el.textContent = kept
+    ? `${name} saved with ${frames.length} frames, its readings and its counts.`
+    : `${name} saved with its readings and counts.`;
+  setTimeout(() => { el.hidden = true; }, 7000);
 };
 
 const OBJECT = 'elbowroom.object';
