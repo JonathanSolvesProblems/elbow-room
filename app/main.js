@@ -460,9 +460,13 @@ export function boot() {
     }
     for (const x of readJson('elbowroom.sessions', []) || []) {
       if (x && x.name) {
-        list.push({ id: 'saved:' + x.name, name: x.name,
-                    note: `${Object.keys(x.readings || {}).length} readings` +
-                          (x.frames ? `, ${x.frames} frames` : ''),
+        // Count only real measurements. Step counts alone cannot size a staircase.
+        const measured = Object.keys(x.readings || {}).filter(k => !/treads$/.test(k)).length;
+        list.push({ id: 'saved:' + x.name, name: x.name, measured,
+                    note: measured
+                      ? `${measured} reading${measured === 1 ? '' : 's'}` +
+                        (x.frames ? `, ${x.frames} frames` : '')
+                      : `no measurements yet` + (x.frames ? `, ${x.frames} frames` : ''),
                     readings: x.readings, counts: x.counts, photo: x.photo });
       }
     }
@@ -548,9 +552,17 @@ export function boot() {
     const sw = document.getElementById('switch');
     if (sw) {
       const on = list.find(x => x.id === active) || list[0];
-      sw.textContent = on.id
-        ? 'Everything below is computed from this one. Kept in this browser only.'
-        : 'The staircase this app was built for. Measure your own to add it here.';
+      sw.style.color = '';
+      if (!on.id) {
+        sw.textContent = 'The staircase this app was built for. Measure your own to add it here.';
+      } else if (on.measured === 0) {
+        sw.style.color = 'var(--pinch)';
+        sw.textContent = `${on.name} has no measurements in it, so this is the default shape ` +
+          `wearing your photograph. Go back to Measure yours, take a reading, press Save this ` +
+          `reading, then save the staircase again.`;
+      } else {
+        sw.textContent = 'Everything below is computed from this one. Kept in this browser only.';
+      }
     }
   }
 

@@ -478,6 +478,9 @@ document.getElementById('example').onclick = e => {
     // The bundled example deserves the same assessment as anything uploaded,
     // or the advice looks like it only appears for other people's photos.
     showAdvice(assess(img));
+    // And the same memory. Only the multi-file and video paths were keeping the
+    // bench, so a single photograph was lost on the way to the planner.
+    rememberWork(); rememberFrames();
   };
   img.src = '/docs/stairs-width.jpg';
 };
@@ -693,6 +696,7 @@ function load(f) {
       cv.hidden = false; drop.hidden = true;
       draw(); steps();
       showAdvice(assess(img));
+      rememberWork(); rememberFrames();
       Loader.done();
     };
     img.src = fr.result;
@@ -1012,6 +1016,7 @@ function grabFrame(t) {
       if (looksEquirectangular(img.width, img.height)) { Loader.done(); return startPano(img); }
       S.image = img; S.reset(); draw(); steps();
       showAdvice(assess(img));
+      rememberWork(); rememberFrames();
       Loader.done();
     };
     img.src = c.toDataURL('image/jpeg', 0.92);
@@ -1252,6 +1257,15 @@ function readout() {
            : 'Click the four corners of your reference first.');
 
   const n = Object.keys(saved).length;
+  const saveBtn = document.getElementById('saveSession');
+  if (saveBtn) {
+    const real = Object.keys(saved).filter(k => !k.endsWith('treads')).length;
+    saveBtn.title = real
+      ? `Keeps ${real} reading(s), the counts and the frames under a name.`
+      : 'No measurements yet. It will keep the frames, but the planner will show the ' +
+        'default staircase until you save a reading.';
+  }
+
   document.getElementById('send').disabled = !n;
   document.getElementById('sendWhy').textContent = n
     ? `${n} reading${n > 1 ? 's' : ''} kept in this browser. Nothing is sent anywhere.`
@@ -1688,11 +1702,24 @@ document.getElementById('saveSession').onclick = async () => {
   document.getElementById('sessionName').value = '';
   renderSessions();
   const el = document.getElementById('opened');
+  const n = Object.keys(saved).filter(k => !k.endsWith('treads')).length;
   el.hidden = false;
-  el.textContent = kept
-    ? `${name} saved with ${frames.length} frames, its readings and its counts.`
-    : `${name} saved with its readings and counts.`;
-  setTimeout(() => { el.hidden = true; }, 7000);
+  // Saying "saved" for a staircase with no measurements in it is how someone
+  // ends up in the planner wondering why it still looks like my house.
+  if (!n) {
+    el.style.color = 'var(--pinch)';
+    el.style.borderColor = 'var(--pinch)';
+    el.textContent = `${name} is saved with ${frames.length} frame` +
+      `${frames.length === 1 ? '' : 's'}, but no measurements. In the planner it will show ` +
+      `the default staircase wearing your photograph. Take a reading, press Save this reading, ` +
+      `then save this staircase again.`;
+  } else {
+    el.style.color = 'var(--ok)';
+    el.style.borderColor = 'var(--ok)';
+    el.textContent = `${name} saved: ${n} reading${n === 1 ? '' : 's'}` +
+      (kept ? `, ${frames.length} frames` : '') + `, and the step counts.`;
+  }
+  setTimeout(() => { el.hidden = true; }, n ? 7000 : 14000);
 };
 
 const OBJECT = 'elbowroom.object';
