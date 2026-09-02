@@ -2,7 +2,7 @@
 
 **Before you buy the couch, find out whether it can get up the stairs.**
 
-Live: **https://elbow-room-sand.vercel.app**
+Live: **https://elbowroom.jonathanandrei.com**
 
 Every room planner ever built answers *does it fit in the room*. This one answers the question that
 actually costs people money and plaster: **can it even get there.** Through the door, up the run,
@@ -136,7 +136,7 @@ registerTool({ name: 'check_fit', /* ... */ }, { exposedTo: ['https://halliwell-
 
 // there: the shop must ask for us by name
 const tools = await document.modelContext.getTools({
-  fromOrigins: ['https://elbow-room-sand.vercel.app']
+  fromOrigins: ['https://elbowroom.jonathanandrei.com']
 });
 ```
 

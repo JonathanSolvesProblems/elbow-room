@@ -25,7 +25,7 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-URL = "https://elbow-room-sand.vercel.app/"
+URL = "https://elbowroom.jonathanandrei.com/"
 OUT = pathlib.Path(__file__).parent / "results.json"
 
 # The questions someone actually needs answered to help with this task. Each is
