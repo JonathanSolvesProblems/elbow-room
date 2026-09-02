@@ -1051,16 +1051,47 @@ function steps() {
     ? `Calibrated against ${ft(S.refWidth)} by ${ft(S.refHeight)}. Click any two points.`
     : `Waiting for ${4 - S.refPoints.length} more corner(s).`;
 
-  // One plane at a time. Calibrating on a couch cushion and then measuring the
-  // floor gives a confident wrong answer, and nothing on screen said so.
+  // One plane at a time, and the right size for the shape that was clicked.
   const warn = document.getElementById('planewarn');
   if (warn) {
+    const shape = refShapeComplaint();
     warn.hidden = !S.H;
-    warn.textContent = S.H
-      ? 'Measure only things lying on the same surface as that rectangle. A reference on a ' +
-        'seat cannot measure the floor.'
-      : '';
+    warn.textContent = !S.H ? ''
+      : shape || 'Measure only things lying on the same surface as that rectangle. A reference ' +
+                 'on a seat cannot measure the floor.';
+    warn.style.color = shape ? 'var(--pinch)' : '#c9902f';
   }
+}
+
+/**
+ * Does the shape clicked look anything like the size typed.
+ *
+ * The four corners fit the reference rectangle by construction, so the maths
+ * can never disagree with itself. What it can do is check plausibility: a stair
+ * tread photographed from the bottom of the flight is a long thin quadrilateral,
+ * and the boxes still say 41.5 by 41.5 because that is the default. Nothing
+ * flagged it, and every reading afterwards was out by the ratio.
+ *
+ * Compares the mean length of the two "width" sides against the two "depth"
+ * sides in the picture, and complains when that is wildly at odds with the
+ * numbers typed. Perspective distorts this, so the threshold is generous: it
+ * only fires on the mistakes worth catching.
+ */
+function refShapeComplaint() {
+  if (!S.H || S.refPoints.length !== 4) return '';
+  const [a, b2, c, d] = S.refPoints;
+  const len = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
+  const across = (len(a, b2) + len(c, d)) / 2;
+  const along  = (len(b2, c) + len(d, a)) / 2;
+  if (!across || !along) return '';
+  const drawn = across / along;
+  const typed = S.refWidth / S.refHeight;
+  if (!isFinite(drawn) || !isFinite(typed) || typed <= 0) return '';
+  const off = drawn > typed ? drawn / typed : typed / drawn;
+  if (off < 2.6) return '';
+  return `The shape you clicked is about ${drawn.toFixed(1)} times wider than it is deep, but ` +
+         `you have told me the reference is ${ft(S.refWidth)} by ${ft(S.refHeight)}. ` +
+         `A stair tread is roughly 41 by 10, not square. Fix the depth or every reading is out.`;
 }
 
 function readout() {

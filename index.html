@@ -220,6 +220,9 @@ function setView(v) {
   stage.dataset.view = v;
   tabs.forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   window.dispatchEvent(new Event('resize'));
+  // Whichever view you were in is the one you want back. Landing on Plan every
+  // time after choosing 3D is a small thing that makes the app feel forgetful.
+  try { localStorage.setItem('elbowroom.view', v); } catch { /* private mode */ }
 }
 tabs.forEach(b => b.onclick = () => setView(b.dataset.view));
 
@@ -231,7 +234,11 @@ modeBtns.forEach(b => b.onclick = () => {
   modeBtns.forEach(o => o.classList.toggle('on', o === b));
   window.dispatchEvent(new CustomEvent('elbowroom:mode', { detail: b.dataset.mode }));
 });
-setView(window.innerWidth >= 1180 ? 'both' : 'plan');
+let lastView = null;
+try { lastView = localStorage.getItem('elbowroom.view'); } catch { /* none kept */ }
+setView(['plan', 'solid', 'both'].includes(lastView)
+  ? lastView
+  : (window.innerWidth >= 1180 ? 'both' : 'plan'));
 </script>
 </body>
 </html>
