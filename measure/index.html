@@ -37,10 +37,14 @@
      aligning fixed that and left the picture stranded above a field of black.
      A sticky, viewport-tall column is both: the sidebar can grow and scroll all
      it likes, and the photograph stays put, centred, where you are working. */
-  .stage { position:sticky; top:0; align-self:start; height:100vh;
-           display:grid; justify-items:center; align-content:center; padding:1rem; }
+  /* Scoped to the layout column. The loader's message paragraph also carries
+     class "stage", and an unscoped height of 100vh made that one line 980
+     pixels tall, blowing the failure card past the bottom of the screen with
+     its buttons on it. */
+  .wrap > .stage { position:sticky; top:0; align-self:start; height:100vh;
+                   display:grid; justify-items:center; align-content:center; padding:1rem; }
   @media (max-width:900px) {
-    .stage { position:static; height:auto; align-content:start; }
+    .wrap > .stage { position:static; height:auto; align-content:start; }
   }
   #pano { width:100%; height:calc(100vh - 5rem); border-radius:10px;
           border:1px solid var(--line); cursor:crosshair; touch-action:none; }
@@ -113,12 +117,12 @@
   #loadActions { margin-top:1rem; }
   #loadActions .row { display:flex; gap:.5rem; margin-top:.55rem; }
   #loadActions .row button { flex:1; margin:0; }
-  .loading.failed .stage { color:var(--fg); }
+  .loading.failed .loadline { color:var(--fg); }
   .loading .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
                    padding:1.6rem 1.8rem; min-width:22rem; max-width:28rem;
                    box-shadow:0 20px 60px rgb(0 0 0 / .25); }
   .loading h3 { margin:0 0 .2rem; font-size:1rem; letter-spacing:-.01em; }
-  .loading .stage { color:var(--mut); font-size:13px; margin:0 0 .9rem; min-height:1.2em; }
+  .loading .loadline { color:var(--mut); font-size:13px; margin:0 0 .9rem; min-height:1.2em; }
   .bar { height:5px; border-radius:3px; background:var(--line); overflow:hidden; }
   .bar i { display:block; height:100%; width:0%; background:var(--accent);
            transition:width .28s cubic-bezier(.4,0,.2,1); }
@@ -144,7 +148,7 @@
 <div class="loading" id="loading" role="status" aria-live="polite">
   <div class="card">
     <h3 id="loadTitle">Reading your file</h3>
-    <p class="stage" id="loadStage">Nothing has left your browser.</p>
+    <p class="loadline" id="loadStage">Nothing has left your browser.</p>
     <div class="bar"><i id="loadBar"></i></div>
     <ul class="steps2" id="loadSteps"></ul>
     <div id="loadActions" hidden>
