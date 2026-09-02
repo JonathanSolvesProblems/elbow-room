@@ -60,6 +60,17 @@
   /* An explicit display beats the hidden attribute. Said once, so nothing here
      can be told to hide and stay on screen. */
   [hidden] { display:none !important; }
+  /* Fingers are not cursors. Anything tapped on a touch screen gets a target
+     a thumb can actually land on, which the 30 pixel nav links were not. */
+  @media (pointer: coarse) {
+    .hub a { padding:.55rem .7rem; min-height:44px; display:inline-flex; align-items:center; }
+    /* The link to the measure page is the main way out of here on a phone, and
+       it was a 17 pixel line of text. */
+    aside > p > a, .yours a, #switch a { display:inline-block; padding:.5rem 0; min-height:44px; }
+    button, select, input[type="number"], input[type="text"], input:not([type]) { min-height:44px; }
+    button { padding:.6rem .9rem; }
+    .strip img { height:3.6rem; }
+  }
   .viewctl { position:absolute; right:.7rem; bottom:.9rem; z-index:5; display:flex; gap:.2rem;
              background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.2rem; }
   .viewctl button { font:inherit; font-size:13px; min-width:2rem; padding:.3rem .45rem; margin:0;

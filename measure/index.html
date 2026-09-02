@@ -82,9 +82,23 @@
      screen with all its thumbnails after Start again. Say it once, here, for
      anything that sets its own display. */
   [hidden] { display:none !important; }
+  /* Fingers are not cursors. Anything tapped on a touch screen gets a target
+     a thumb can actually land on, which the 30 pixel nav links were not. */
+  @media (pointer: coarse) {
+    .hub a { padding:.55rem .7rem; min-height:44px; display:inline-flex; align-items:center; }
+    button, select, input[type="number"], input[type="text"], input:not([type]) { min-height:44px; }
+    button { padding:.6rem .9rem; }
+    .strip img { height:3.6rem; }
+    /* A 13 pixel checkbox inside a 20 pixel label is not a target. Give the
+       whole row to the thumb. */
+    label:has(input[type="checkbox"]) { display:flex; align-items:center; min-height:44px; }
+    .tick { width:22px; height:22px; min-height:22px; flex:0 0 auto; }
+    #opened a, #forgetWrap a, .marks a { display:inline-block; padding:.45rem .2rem; min-height:44px; }
+  }
   .strip img { height:3.1rem; border-radius:6px; border:2px solid transparent; cursor:pointer;
                opacity:.6; flex:0 0 auto; }
   .strip img.on { border-color:var(--accent); opacity:1; }
+  .tick { width:auto; margin-right:.5rem; accent-color:var(--accent); }
   .loading { position:fixed; inset:0; z-index:60; display:none; place-items:center;
              background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(3px); }
   .loading.on { display:grid; }
@@ -245,7 +259,7 @@
     </div>
 
     <label style="margin-top:.7rem"><input type="checkbox" id="useSkin" checked
-      style="width:auto;margin-right:.4rem">Put this frame on the walls in 3D</label>
+      class="tick">Put this frame on the walls in 3D</label>
 
     <button class="primary" id="send" disabled>Use this staircase in Elbow Room</button>
     <p class="note" id="sendWhy">Saved in this browser only. Nothing is sent anywhere.</p>
@@ -457,7 +471,11 @@ document.getElementById('example').onclick = e => {
   img.src = '/docs/stairs-width.jpg';
 };
 document.getElementById('loadClose').onclick = () => Loader.clear();
-document.getElementById('loadPick').onclick = () => { Loader.clear(); file.click(); };
+document.getElementById('loadPick').onclick = () => {
+  Loader.clear();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  file.click();
+};
 drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; };
 drop.ondragleave = () => drop.style.borderColor = '';
 drop.ondrop = e => {
@@ -1731,6 +1749,12 @@ document.getElementById('reset').onclick = async () => {
   drop.hidden = false;
   drop.style.borderColor = '';
   steps(); readout();
+
+  // Back to the top, where the drop zone is. Start again is at the very bottom
+  // of a long sidebar, so clearing everything left you looking at empty space
+  // with the thing you need next off screen above you.
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  drop.scrollIntoView({ block: 'center', behavior: 'smooth' });
 };
 
 S.onChange(() => { draw(); steps(); readout(); rememberWork(); });

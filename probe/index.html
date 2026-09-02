@@ -43,6 +43,15 @@
              border-radius:10px; background:var(--card); padding:1rem; box-shadow:0 8px 30px rgb(0 0 0 / .18); }
   #confirm p { margin:0 0 .8rem; }
   .stairs { font-family:ui-monospace,monospace; font-size:12.5px; color:var(--mut); }
+
+  /* Fingers are not cursors. Anything tapped on a touch screen gets a target
+     a thumb can actually land on, which the 30 pixel nav links were not. */
+  @media (pointer: coarse) {
+    .hub a { padding:.55rem .7rem; min-height:44px; display:inline-flex; align-items:center; }
+    button, select, input[type="number"], input[type="text"], input:not([type]) { min-height:44px; }
+    button { padding:.6rem .9rem; }
+    .strip img { height:3.6rem; }
+  }
 </style>
 </head>
 <body>
