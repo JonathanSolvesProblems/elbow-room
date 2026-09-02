@@ -603,6 +603,8 @@ function renderStrip() {
 }
 
 function useImage(g) {
+  // Keep the bench, so a trip to the planner and back does not cost a decode.
+  setTimeout(() => { rememberWork(); rememberFrames(); }, 0);
   if (looksEquirectangular(g.img.width, g.img.height)) return startPano(g.img);
   S.image = g.img; S.reset();
   const max = 1100, k = Math.min(1, max / Math.max(g.img.width, g.img.height));
@@ -1243,6 +1245,111 @@ function galleryAsFrames() {
   }).filter(Boolean);
 }
 
+/* ---------------------------------------------------------------------- *
+ * Where you left off.
+ *
+ * Decoding a clip takes real seconds and clicking four corners takes real care,
+ * and both were thrown away by a trip to the planner and back. Nothing about
+ * that work is worth losing to a navigation, so the frames, the corners and the
+ * reference size are kept as you go and put back when you return.
+ *
+ * This is separate from a named session: it is the bench you were working at,
+ * restored without being asked, with one link to clear it.
+ * ---------------------------------------------------------------------- */
+
+const WORKING = 'elbowroom.working';
+const WORKING_FRAMES = '__working';
+let restoring = false;
+
+function rememberWork() {
+  if (restoring) return;
+  try {
+    if (!S.image) { localStorage.removeItem(WORKING); return; }
+    localStorage.setItem(WORKING, JSON.stringify({
+      refPoints: S.refPoints,
+      refWidth: S.refWidth,
+      refHeight: S.refHeight,
+      active: gallery.findIndex(g => g.img === S.image),
+      at: Date.now()
+    }));
+  } catch { /* private mode, work is simply not kept */ }
+}
+
+/** Keep the pictures too, since re-decoding a clip is the expensive part. */
+async function rememberFrames() {
+  if (restoring) return;
+  const frames = gallery.length
+    ? galleryAsFrames()
+    : (S.image ? [{ name: 'frame', url: frameAsPhoto(true) }].filter(f => f.url) : []);
+  if (frames.length) await putFrames(WORKING_FRAMES, frames);
+  else await dropFrames(WORKING_FRAMES);
+}
+
+async function forgetWork() {
+  try { localStorage.removeItem(WORKING); } catch { /* nothing kept */ }
+  await dropFrames(WORKING_FRAMES);
+}
+
+/** Put the bench back, quietly, before anyone has to ask. */
+async function resumeWork() {
+  let w = null;
+  try { w = JSON.parse(localStorage.getItem(WORKING) || 'null'); } catch { return false; }
+  if (!w) return false;
+  const frames = await getFrames(WORKING_FRAMES);
+  if (!frames || !frames.length) { await forgetWork(); return false; }
+
+  restoring = true;
+  Loader.show('Picking up where you left off', ['Reading your frames', 'Putting the corners back']);
+  try {
+    gallery.length = 0;
+    for (let i = 0; i < frames.length; i++) {
+      Loader.at(0, 10 + (i / frames.length) * 60, `Frame ${i + 1} of ${frames.length}`);
+      await breathe();
+      const img = await asImage(await (await fetch(frames[i].url)).blob());
+      if (img) gallery.push({ img, name: frames[i].name || `frame ${i + 1}`, a: assess(img) });
+    }
+    if (!gallery.length) { restoring = false; await forgetWork(); Loader.clear(); return false; }
+
+    renderStrip();
+    const at = Number.isInteger(w.active) && w.active >= 0 && w.active < gallery.length ? w.active : 0;
+    Loader.at(1, 85, 'Restoring the reference');
+    await breathe();
+    useImage(gallery[at]);
+
+    // The corners, in the order they were clicked, so the homography is the one
+    // that was there before rather than a fresh guess.
+    if (typeof w.refWidth === 'number' && typeof w.refHeight === 'number') {
+      document.getElementById('rw').value = w.refWidth;
+      document.getElementById('rh').value = w.refHeight;
+      S.setReference(w.refWidth, w.refHeight);
+    }
+    if (Array.isArray(w.refPoints)) {
+      for (const p of w.refPoints.slice(0, 4)) {
+        if (p && typeof p.x === 'number' && typeof p.y === 'number') S.addPoint(p);
+      }
+    }
+    draw(); steps(); readout();
+    Loader.done();
+    const el = document.getElementById('opened');
+    el.hidden = false;
+    el.innerHTML = `Picked up where you left off: ${gallery.length} frame` +
+      `${gallery.length === 1 ? '' : 's'}` +
+      `${S.H ? ' and your four corners' : ''}. ` +
+      `<a href="#" id="freshStart">Start from scratch instead</a>.`;
+    document.getElementById('freshStart').onclick = async e => {
+      e.preventDefault();
+      await forgetWork();
+      location.reload();
+    };
+    restoring = false;
+    return true;
+  } catch {
+    restoring = false;
+    Loader.clear();
+    return false;
+  }
+}
+
 const SESSIONS = 'elbowroom.sessions';
 const PHOTO = 'elbowroom.photo';
 
@@ -1253,8 +1360,9 @@ function counts() {
 }
 
 /** The frame on screen, small enough to keep in a browser store. */
-function frameAsPhoto() {
-  if (!document.getElementById('useSkin').checked || !S.image) return null;
+function frameAsPhoto(always) {
+  if (!S.image) return null;
+  if (!always && !document.getElementById('useSkin').checked) return null;
   const c = document.createElement('canvas');
   const k = Math.min(1, 900 / Math.max(S.image.width, S.image.height));
   c.width = Math.max(2, (S.image.width * k) | 0);
@@ -1422,17 +1530,21 @@ document.getElementById('send').onclick = () => {
   location.href = '/?mine=1';
 };
 
-document.getElementById('reset').onclick = () => {
+document.getElementById('reset').onclick = async () => {
   S.reset(); pending = null; last = null;
+  gallery.length = 0;
+  renderStrip();
+  await forgetWork();
   draw(); steps(); readout();
 };
 
-S.onChange(() => { draw(); steps(); readout(); });
+S.onChange(() => { draw(); steps(); readout(); rememberWork(); });
 restore();
 renderMarks();
 renderSessions();
 steps();
 readout();
+resumeWork();
 
 /* ---------- 360 footage ---------- */
 

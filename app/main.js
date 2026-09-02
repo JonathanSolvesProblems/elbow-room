@@ -275,6 +275,56 @@ export function boot() {
     if (e.detail === 'reset') app.resetPose();
   });
 
+  /* ------------------------------------------------------------------ *
+   * What you had on the canvas.
+   *
+   * Picking an object, typing its size and carrying it to the tight spot is
+   * work, and a click on "Measure yours" used to throw all of it away. Kept
+   * here in the browser and put back on return, so the two pages behave like
+   * one app rather than two.
+   * ------------------------------------------------------------------ */
+  const BENCH = 'elbowroom.bench';
+  let benching = false;
+
+  const rememberBench = () => {
+    if (benching) return;
+    try {
+      const p = app.pose();
+      localStorage.setItem(BENCH, JSON.stringify({
+        id: app.current.id,
+        label: app.current.label,
+        dims: app.dims,
+        door: app.doorRemoved,
+        pos: { x: p.x, y: p.y },
+        angle: p.angle
+      }));
+    } catch { /* private mode, nothing is kept */ }
+  };
+
+  // Read once, at the top, before anything on this page has had a chance to
+  // write over it. Booting selects the first catalogue object, which fired a
+  // change, which saved the couch over the mattress you actually left there.
+  let benchOnArrival = null;
+  try { benchOnArrival = JSON.parse(localStorage.getItem(BENCH) || 'null'); } catch { /* none */ }
+
+  const restoreBench = () => {
+    const b = benchOnArrival;
+    if (!b || !b.dims) return false;
+    const n = v => (typeof v === 'number' && isFinite(v) && v > 0 ? v : null);
+    if (!n(b.dims.length) || !n(b.dims.depth) || !n(b.dims.height)) return false;
+    benching = true;
+    try {
+      if (b.id && CATALOGUE.some(c => c.id === b.id)) app.select(b.id);
+      else app.setDims({ ...b.dims, label: String(b.label || 'Custom object').slice(0, 40) });
+      app.setDims(b.dims);
+      if (b.door) app.setDoorRemoved(true);
+      if (b.pos && typeof b.pos.x === 'number') {
+        app.place({ x: b.pos.x, y: b.pos.y, angle: b.angle || 0 });
+      }
+    } finally { benching = false; }
+    return true;
+  };
+
   const pick = document.getElementById('pick');
   for (const item of CATALOGUE) {
     const o = document.createElement('option');
@@ -342,6 +392,8 @@ export function boot() {
     // One clearance test drives both drawings.
     view.setClear(solid.isClear());
 
+    rememberBench();
+
     const prov = document.getElementById('prov');
     prov.innerHTML =
       `<li><strong>${ft(STAIRCASE.clearWidth.value)}</strong> clear width. ${STAIRCASE.clearWidth.note}</li>` +
@@ -380,6 +432,9 @@ export function boot() {
   // sat where the previous object had been parked, so Reset, which parks
   // correctly, appeared to move it somewhere new.
   if (carried) view.park();
+  // Only when nothing arrived from the measure page, which is a deliberate act
+  // and should win over whatever was last on the canvas.
+  if (!carried) restoreBench();
   if (carried) {
     const el = document.getElementById('mine');
     if (el) {
