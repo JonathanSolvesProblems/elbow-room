@@ -1499,10 +1499,18 @@ function readout() {
         'default staircase until you save a reading.';
   }
 
-  document.getElementById('send').disabled = !n;
-  document.getElementById('sendWhy').textContent = n
-    ? `${n} reading${n > 1 ? 's' : ''} kept in this browser. Nothing is sent anywhere.`
-    : 'Save at least one reading and this opens your own staircase in the planner.';
+  // A traced room is reason enough to go to the planner, even with no readings
+  // filed against the staircase: the room is the thing you want to stand in.
+  const traced = outline.length >= 3;
+  document.getElementById('send').disabled = !n && !traced;
+  document.getElementById('sendWhy').textContent =
+    traced && !n
+      ? 'Your traced room goes to the planner. Kept in this browser only.'
+      : traced
+        ? `${n} reading${n > 1 ? 's' : ''} and your traced room, kept in this browser only.`
+        : n
+          ? `${n} reading${n > 1 ? 's' : ''} kept in this browser. Nothing is sent anywhere.`
+          : 'Save a reading, or trace a room, and this opens it in the planner.';
 }
 
 document.getElementById('rw').oninput = sync;
