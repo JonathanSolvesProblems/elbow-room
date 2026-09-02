@@ -99,6 +99,24 @@ export function registerTools(app) {
     inputSchema: { type: 'object', properties: {} },
     annotations: R,
     execute: async () => {
+      // A traced room is a different place, and saying "a straight run rising
+      // into 3 winder treads" about someone's living room would be a lie.
+      if (app.room) {
+        const { describe } = await import('./room.js');
+        const d = describe(app.room, app.ceiling);
+        return reply(
+          `A room traced from a photograph, not a staircase. ${d.corners} corners, ` +
+          `${ft(d.width)} across at its widest and ${ft(d.depth)} deep, ` +
+          `${d.area.toFixed(1)} square feet of floor, ${ft(d.ceiling)} to the ceiling.
+` +
+          `Narrowest gap between walls: ${isFinite(d.narrowest) ? ft(d.narrowest) : 'none'}.
+` +
+          `Longest straight run that stays inside: ${ft(d.longest)}.
+` +
+          `The outline came from clicking the floor on one calibrated photograph. ` +
+          `Nothing was stitched or reconstructed, so it is only as square as the clicks were.`
+        );
+      }
       const s = app.stairModel;
       const unknown = app.unknowns().map(u => u.field);
       return reply(

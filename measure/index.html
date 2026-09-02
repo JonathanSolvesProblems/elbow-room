@@ -231,6 +231,20 @@
     <p class="note" id="planewarn" hidden style="margin-top:.4rem;color:#c9902f"></p>
     </div>
 
+    <div id="roomBox" hidden>
+      <h2>Trace the room</h2>
+      <p class="note" style="margin:0 0 .5rem">With the plane calibrated, clicking round where the
+        walls meet the floor turns those clicks into real inches. Go round the outline in order and
+        press Close the outline. Nothing is stitched: this is your photograph, measured.</p>
+      <button id="traceStart">Start tracing the floor</button>
+      <button id="traceClose" hidden>Close the outline</button>
+      <button id="traceClear" hidden>Clear the outline</button>
+      <label style="margin-top:.6rem">ceiling height, inches</label>
+      <input id="ceiling" type="number" step="1" min="60" max="180" value="96">
+      <ul class="marks" id="roomFacts"></ul>
+      <p class="note" id="roomState" style="margin-top:.4rem"></p>
+    </div>
+
     <div id="advice" class="advice" hidden></div>
     <p class="note" id="striphelp" hidden style="margin:.7rem 0 0;font-size:11.5px">
       These are <strong>candidate stills</strong>, not a reconstruction. Nothing is being
@@ -318,6 +332,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createSession, project, distance } from '../app/calibrate.js';
 import { looksEquirectangular, heightSensitivity } from '../app/pano.js';
+import * as Room from '../app/room.js';
 import { ft } from '../app/units.js';
 
 const S = createSession();
@@ -1049,6 +1064,104 @@ document.getElementById('frame').oninput = e => {
 /* ---------- clicking ---------- */
 
 /* ---------------------------------------------------------------------- *
+ * Tracing the room.
+ *
+ * The homography already maps this photograph's floor to real inches. Clicking
+ * round where the walls meet that floor therefore produces a floor plan with a
+ * true scale, from one picture, with no reconstruction anywhere in it.
+ *
+ * The clicks are kept in image space so they can be drawn and dragged, and
+ * projected to inches only when the outline is read.
+ * ---------------------------------------------------------------------- */
+
+let tracing = false;
+let outline = [];          // image-space points
+
+const ROOM = 'elbowroom.room';
+
+/** The outline in real floor inches, origin at its own top left corner. */
+function outlineInches() {
+  if (!S.H || outline.length < 3) return [];
+  const pts = outline.map(p => project(S.H, p));
+  return Room.originAtCorner(Room.normalise(pts)).poly;
+}
+
+function roomFacts() {
+  const poly = outlineInches();
+  const el = document.getElementById('roomFacts');
+  const st = document.getElementById('roomState');
+  if (poly.length < 3) {
+    el.innerHTML = '';
+    st.textContent = tracing
+      ? `Click each corner where a wall meets the floor. ${outline.length} so far, ` +
+        `three needed before it is a room.`
+      : '';
+    return null;
+  }
+  const d = Room.describe(poly, +document.getElementById('ceiling').value || 96);
+  el.innerHTML =
+    `<li><span>corners</span><span>${d.corners}</span></li>` +
+    `<li><span>widest across</span><span>${ft(d.width)}</span></li>` +
+    `<li><span>deepest</span><span>${ft(d.depth)}</span></li>` +
+    `<li><span>floor area</span><span>${d.area.toFixed(1)} sq ft</span></li>` +
+    `<li><span>narrowest gap</span><span>${isFinite(d.narrowest) ? ft(d.narrowest) : 'n/a'}</span></li>` +
+    `<li><span>longest straight run</span><span>${ft(d.longest)}</span></li>`;
+  st.textContent = tracing
+    ? `${outline.length} corners. Press Close the outline when you are back where you started.`
+    : 'Traced. Send it to the planner and it becomes a room you can put things in.';
+  return d;
+}
+
+function setTracing(on) {
+  tracing = on;
+  document.getElementById('traceStart').hidden = on || outline.length > 0;
+  document.getElementById('traceClose').hidden = !on;
+  document.getElementById('traceClear').hidden = outline.length === 0;
+  cv.style.cursor = on ? 'crosshair' : '';
+  roomFacts();
+  draw();
+}
+
+document.getElementById('traceStart').onclick = () => { outline = []; setTracing(true); };
+document.getElementById('traceClose').onclick = () => {
+  if (outline.length < 3) return;
+  setTracing(false);
+  persistRoom();
+};
+document.getElementById('traceClear').onclick = () => {
+  outline = [];
+  setTracing(false);
+  try { localStorage.removeItem(ROOM); } catch { /* nothing kept */ }
+  roomFacts();
+  draw();
+};
+document.getElementById('ceiling').oninput = () => { roomFacts(); persistRoom(); };
+
+function persistRoom() {
+  const poly = outlineInches();
+  try {
+    if (poly.length >= 3) {
+      localStorage.setItem(ROOM, JSON.stringify({
+        poly,
+        ceiling: +document.getElementById('ceiling').value || 96,
+        traced: outline
+      }));
+    } else {
+      localStorage.removeItem(ROOM);
+    }
+  } catch { /* private mode */ }
+}
+
+function restoreRoom() {
+  let r = null;
+  try { r = JSON.parse(localStorage.getItem(ROOM) || 'null'); } catch { return; }
+  if (!r) return;
+  if (Array.isArray(r.traced)) outline = r.traced;
+  if (r.ceiling) document.getElementById('ceiling').value = r.ceiling;
+  setTracing(false);
+}
+
+/* ---------------------------------------------------------------------- *
  * Taking a click back.
  *
  * Every point here is placed by hand and hands miss. Until now the only way out
@@ -1062,7 +1175,7 @@ const history = [];
 function snapshot() {
   history.push(JSON.stringify({
     refPoints: S.refPoints, marks: S.marks, pending,
-    refWidth: S.refWidth, refHeight: S.refHeight
+    refWidth: S.refWidth, refHeight: S.refHeight, outline
   }));
   if (history.length > 50) history.shift();
   const u = document.getElementById('undo');
@@ -1078,6 +1191,8 @@ function undo() {
   pending = st.pending || null;
   S.refWidth = st.refWidth;
   S.refHeight = st.refHeight;
+  outline = st.outline || [];
+  roomFacts();
   document.getElementById('rw').value = st.refWidth;
   document.getElementById('rh').value = st.refHeight;
   S.compute();
@@ -1184,6 +1299,12 @@ cv.onclick = e => {
   if (justDragged) { justDragged = false; return; }
   const p = at(e);
   snapshot();
+  if (tracing) {
+    outline.push(p);
+    roomFacts();
+    draw();
+    return;
+  }
   if (S.refPoints.length < 4) { S.addPoint(p); }
   else if (!pending) { pending = p; }
   else { last = S.measure(pending, p); pending = null; }
@@ -1205,6 +1326,23 @@ function draw() {
     ctx.stroke();
     S.refPoints.forEach((p, i) => dot(p, '#e0a33a', String(i + 1)));
   }
+  // the room outline
+  if (outline.length) {
+    ctx.strokeStyle = '#6cc4ff';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash(tracing ? [8, 6] : []);
+    ctx.beginPath();
+    outline.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    if (!tracing && outline.length > 2) ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (!tracing && outline.length > 2) {
+      ctx.fillStyle = 'rgba(108,196,255,.13)';
+      ctx.fill();
+    }
+    outline.forEach((p, i) => dot(p, '#6cc4ff', String(i + 1)));
+  }
+
   // measurements
   for (const m of S.marks) line(m.p, m.q, ft(m.inches), '#3fb27f');
   if (pending) dot(pending, '#3fb27f');
@@ -1245,6 +1383,8 @@ function steps() {
   // One plane at a time, and the right size for the shape that was clicked.
   const redo = document.getElementById('redo');
   if (redo) redo.hidden = !S.image || S.refPoints.length === 0;
+  const rb = document.getElementById('roomBox');
+  if (rb) rb.hidden = !S.H;
 
   const warn = document.getElementById('planewarn');
   if (warn) {
@@ -1820,6 +1960,11 @@ const OBJECT = 'elbowroom.object';
 document.getElementById('send').onclick = () => {
   Object.assign(saved, counts());
   persist();
+  persistRoom();
+  // A traced room is what you want to see when you arrive, so make it active.
+  try {
+    if (outlineInches().length >= 3) localStorage.setItem('elbowroom.active', '__room');
+  } catch { /* private mode */ }
   const photo = frameAsPhoto();
   try {
     if (photo) localStorage.setItem(PHOTO, photo);
@@ -1893,6 +2038,7 @@ document.getElementById('reset').onclick = async () => {
 
 S.onChange(() => { draw(); steps(); readout(); rememberWork(); });
 restore();
+restoreRoom();
 renderMarks();
 renderSessions();
 steps();

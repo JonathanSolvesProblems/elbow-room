@@ -13,6 +13,7 @@ import { ft } from './units.js';
 import * as view from './view.js';
 import * as solid from './scene.js';
 import { registerTools } from './tools.js';
+import * as Room from './room.js';
 
 export const app = {
   stairModel: STAIRCASE,
@@ -24,6 +25,10 @@ export const app = {
   // What the last Show me where it jams found, shown on the 3D label until
   // anything moves the object again.
   pinchNote: null,
+  // A room traced off a photograph, if one is loaded. When it is, the verdict
+  // is about fitting inside four walls rather than travelling up a flight.
+  room: null,
+  ceiling: 96,
   subscribers: [],
 
   onChange(fn) { this.subscribers.push(fn); },
@@ -32,10 +37,62 @@ export const app = {
   /* ---- reads ---- */
 
   verdict() {
+    if (this.room) return this.roomVerdict();
     return checkPath(
       { ...this.dims, width: this.dims.depth, feetHeight: this.current.feetHeight },
       this.effectiveStair()
     );
+  },
+
+  /**
+   * Does it fit in the room, and can it be got through it.
+   *
+   * Two separate questions, and a room answers both differently from a
+   * staircase: whether the thing physically stands inside the outline at all,
+   * and whether the narrowest wall-to-wall gap will let it past.
+   */
+  roomVerdict() {
+    const d = Room.describe(this.room, this.ceiling);
+    const L = this.dims.length, W = this.dims.depth, H = this.dims.height;
+    const reasons = [];
+
+    const standsFlat = d.longest >= Math.hypot(L, W) * 0.999 || d.longest >= L;
+    reasons.push({
+      stage: 'floor', pass: standsFlat,
+      detail: standsFlat
+        ? `${ft(L)} fits inside the outline. The longest straight run in this room is ${ft(d.longest)}.`
+        : `${ft(L)} is longer than the longest straight run in this room, ${ft(d.longest)}.`
+    });
+
+    const underCeiling = H <= d.ceiling;
+    reasons.push({
+      stage: 'ceiling', pass: underCeiling,
+      detail: underCeiling
+        ? `${ft(H)} tall clears the ${ft(d.ceiling)} ceiling.`
+        : `${ft(H)} tall does not clear the ${ft(d.ceiling)} ceiling.`
+    });
+
+    const gap = isFinite(d.narrowest) ? d.narrowest : Infinity;
+    const throughGap = Math.min(W, H) <= gap;
+    reasons.push({
+      stage: 'narrowest gap', pass: throughGap,
+      detail: isFinite(gap)
+        ? (throughGap
+            ? `Its smallest cross section is ${ft(Math.min(W, H))}, and the narrowest gap here is ${ft(gap)}.`
+            : `The narrowest gap here is ${ft(gap)} and its smallest cross section is ${ft(Math.min(W, H))}.`)
+        : 'This outline has no interior pinch to squeeze through.'
+    });
+
+    const ok = reasons.every(r => r.pass);
+    return {
+      verdict: ok ? 'goes' : 'blocked',
+      reasons,
+      advice: ok ? [] : [
+        'Try it on its side, or measure the doorway on its own and check that instead.'
+      ],
+      footprint: { length: L, width: W, upright: false, tilt: 0 },
+      room: d
+    };
   },
 
   effectiveStair() {
@@ -396,7 +453,11 @@ export function boot() {
     // climbing, and that a water heater goes up standing on end. Every number
     // it draws comes from the same verdict, so the two views cannot disagree.
     const st = app.stairModel;
+    // Set, do not update. view.update emits, and view.onChange calls back into
+    // app.emit, so calling it from inside this handler is an infinite loop.
+    view.state.room = app.room;
     solid.set({
+      room: app.room, ceiling: app.ceiling,
       a: st.turn.widthA.value, b: st.turn.widthB.value,
       headroom: st.turn.headroom.value,
       rise: st.run.rise.value, going: st.run.going.value,
@@ -458,6 +519,14 @@ export function boot() {
                   note: `${Object.keys(working).length} readings`,
                   readings: working, fixed: true });
     }
+    const room = readJson('elbowroom.room', null);
+    if (room && Array.isArray(room.poly) && room.poly.length >= 3) {
+      const d = Room.describe(room.poly, room.ceiling);
+      list.push({ id: '__room', name: 'The room you traced', fixed: true, room: room.poly,
+                  ceiling: room.ceiling,
+                  note: `${d.corners} corners, ${d.area.toFixed(0)} sq ft, ` +
+                        `${ft(d.ceiling)} ceiling` });
+    }
     for (const x of readJson('elbowroom.sessions', []) || []) {
       if (x && x.name) {
         // Count only real measurements. Step counts alone cannot size a staircase.
@@ -475,6 +544,27 @@ export function boot() {
 
   /** Put a staircase on the page: its numbers, its shape, its photograph. */
   function useStaircase(entry) {
+    // A traced room is a different kind of place, not a differently sized
+    // staircase, so it replaces the model rather than editing it.
+    app.room = entry.room || null;
+    app.ceiling = entry.ceiling || 96;
+    if (app.room) {
+      STAIRCASE.label = entry.name;
+      solid.setSkin(null);
+      try {
+        const sk = localStorage.getItem('elbowroom.photo');
+        if (sk) solid.setSkin(sk);
+      } catch { /* no skin kept */ }
+      try { localStorage.setItem(ACTIVE, entry.id); } catch { /* private mode */ }
+      // Stand it in the middle of the room to begin with.
+      const xs = app.room.map(p => p.x), ys = app.room.map(p => p.y);
+      view.update({ pos: { x: (Math.min(...xs) + Math.max(...xs)) / 2,
+                           y: (Math.min(...ys) + Math.max(...ys)) / 2 }, angle: 0 });
+      app.sync();
+      renderPicker();
+      return 1;
+    }
+
     // Back to the model as shipped, then apply whatever this one overrides, so
     // switching never leaves a previous staircase's numbers behind.
     for (const [path, spec] of Object.entries(BASE)) {
@@ -555,6 +645,9 @@ export function boot() {
       sw.style.color = '';
       if (!on.id) {
         sw.textContent = 'The staircase this app was built for. Measure your own to add it here.';
+      } else if (on.room) {
+        sw.textContent = 'A room traced from your own photograph. The verdict below is about ' +
+          'fitting inside it, not carrying something up a flight.';
       } else if (on.measured === 0) {
         sw.style.color = 'var(--pinch)';
         sw.textContent = `${on.name} has no measurements in it, so this is the default shape ` +

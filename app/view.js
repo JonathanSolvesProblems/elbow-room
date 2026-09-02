@@ -22,6 +22,7 @@ const DEG = Math.PI / 180;
 export const state = {
   a: 41.5,
   b: 41.5,
+  room: null,          // a traced outline in inches, or null for the staircase
   object: { length: 91, depth: 36, label: 'The couch', shape: 'sofa', upright: false },
   pos: { x: 70, y: 20.75 },
   angle: 0,
@@ -137,6 +138,19 @@ function reframe() {
   // Long enough that the object is always inside the drawn floor. The
   // corridor is infinite in the model, so stopping the drawing short made
   // the couch look like it was outside a wall that does not exist.
+  // A traced room has its own extent, so fit to that rather than to a corridor
+  // that runs off the page.
+  if (state.room && state.room.length >= 3) {
+    const xs = state.room.map(p => p.x), ys = state.room.map(p => p.y);
+    const w = Math.max(...xs) - Math.min(...xs);
+    const d = Math.max(...ys) - Math.min(...ys);
+    const pad = Math.max(w, d) * 0.12 + 12;
+    scale = Math.min(r.width / (w + pad * 2), r.height / (d + pad * 2));
+    ox = (r.width - w * scale) / 2 - Math.min(...xs) * scale;
+    oy = (r.height + d * scale) / 2 + Math.min(...ys) * scale;
+    return;
+  }
+
   armLen = Math.max(state.a, state.b) + state.object.length * 1.35 + 14;
   const pad = 26;
   const spanX = armLen + pad, spanY = armLen + pad;
@@ -164,6 +178,20 @@ export function draw() {
   ctx.clearRect(0, 0, r.width, r.height);
   const { a, b } = state;
   const far = armLen;
+
+  // A traced room replaces the L entirely: same renderer, different floor.
+  if (state.room && state.room.length >= 3) {
+    ctx.beginPath();
+    state.room.forEach((p, i) => i ? ctx.lineTo(px(p.x), py(p.y)) : ctx.moveTo(px(p.x), py(p.y)));
+    ctx.closePath();
+    ctx.fillStyle = css('--floor', '#efeae1');
+    ctx.fill();
+    ctx.strokeStyle = css('--wall', '#3a352c');
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    drawObject();
+    return;
+  }
 
   // Floor of the L
   ctx.beginPath();
@@ -198,12 +226,21 @@ export function draw() {
   ctx.restore();
   ctx.textAlign = 'left';
 
-  // The object, drawn as what it actually presents to the floor.
-  //
-  // The footprint comes from the orientation the solver chose, not from the raw
-  // length and depth. A water heater is carried upright, so its footprint is a
-  // 24 inch circle rather than a 60 inch rectangle, and drawing the rectangle
-  // made the picture disagree with the maths.
+  drawObject();
+}
+
+/**
+ * The object, drawn as what it actually presents to the floor.
+ *
+ * The footprint comes from the orientation the solver chose, not from the raw
+ * length and depth. A water heater is carried upright, so its footprint is a
+ * 24 inch circle rather than a 60 inch rectangle, and drawing the rectangle
+ * made the picture disagree with the maths.
+ *
+ * Pulled out of draw() so a traced room can use it: the floor changes, the
+ * thing standing on it does not.
+ */
+function drawObject() {
   // Prefer the solid view's verdict, which knows the floor is climbing. The
   // plan's own test only sees walls from above, so on its own it called a couch
   // buried in the treads clear.

@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ft } from './units.js';
+import * as Room from './room.js';
 
 const IN = 0.0254;                     // inches to metres, so the camera behaves
 let renderer, scene, camera, controls, shaftGroup, objectMesh, raf = 0;
@@ -26,6 +27,7 @@ let M = {
   rise: 7.5, going: 9.5, treads: 9, winders: 3,
   object: { length: 91, width: 36, height: 48, shape: 'sofa' },
   tilt: 0, upright: false, blocked: true, touching: false, note: null,
+  room: null, ceiling: 96,
   pos: { x: 100, y: 20 }, yaw: 0
 };
 
@@ -151,9 +153,13 @@ export function attach(canvas) {
 }
 
 export function set(next) {
-  const before = JSON.stringify([M.a, M.b, M.headroom, M.rise, M.going, M.treads, M.winders]);
+  // The room counts as geometry too, so switching between a staircase and a
+  // traced room has to rebuild rather than just move the object.
+  const key = () => JSON.stringify([M.a, M.b, M.headroom, M.rise, M.going, M.treads, M.winders,
+                                    M.ceiling, M.room]);
+  const before = key();
   M = { ...M, ...next, object: { ...M.object, ...(next.object || {}) } };
-  if (JSON.stringify([M.a, M.b, M.headroom, M.rise, M.going, M.treads, M.winders]) !== before) build();
+  if (key() !== before) build();
   placeObject();
 }
 
@@ -246,6 +252,14 @@ function bindDrag(canvas) {
  * along the pitch, and showing it red is the honest answer.
  */
 function poseIsClear() {
+  if (M.room && M.room.length >= 3) {
+    const L = M.upright ? M.object.width : M.object.length;
+    const W = M.object.width;
+    const rect = Room.footprint({ x: M.pos.x, y: M.pos.y, length: L, depth: W, angle: M.yaw });
+    if (!Room.fits(M.room, rect)) return false;
+    const tall = M.upright ? M.object.length : M.object.height;
+    return tall <= (M.ceiling || 96);
+  }
   if (!objectMesh) return true;
   const { length: L, width: W, height: H } = M.object;
   const tilt = (M.upright ? 90 : M.tilt) * Math.PI / 180;
@@ -321,6 +335,11 @@ function bindKeys(canvas) {
  * past the bottom of the flight.
  */
 function clampToShaft(x, y) {
+  if (M.room && M.room.length >= 3) {
+    const xs = M.room.map(p => p.x), ys = M.room.map(p => p.y);
+    return { x: Math.max(Math.min(...xs), Math.min(Math.max(...xs), x)),
+             y: Math.max(Math.min(...ys), Math.min(Math.max(...ys), y)) };
+  }
   const straight = Math.max(1, M.treads - M.winders);
   const run = straight * M.going;
   const overhang = M.object.length * 0.55;
@@ -341,9 +360,59 @@ function clampToShaft(x, y) {
  * The shaft
  * ------------------------------------------------------------------ */
 
+/**
+ * A room traced off a photograph, extruded to its ceiling.
+ *
+ * The same renderer that draws a staircase from tape measurements draws this
+ * from clicks on a calibrated floor. No stitching produced it and none is
+ * claimed: it is an outline in real inches, given walls.
+ */
+function buildRoom() {
+  const poly = M.room;
+  const H = (M.ceiling || 96) * IN;
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: photo('/docs/tex-wall.jpg', 3), color: 0xd4cbbc, roughness: 1,
+    emissive: 0x2b2721, emissiveIntensity: 1, side: THREE.BackSide
+  });
+
+  // y negated so rotateX(-90) maps the plan's y to -z, as the staircase does.
+  const shape = new THREE.Shape();
+  poly.forEach((p, i) => {
+    const x = p.x * IN, y = -p.y * IN;
+    if (i) shape.lineTo(x, y); else shape.moveTo(x, y);
+  });
+  shape.closePath();
+
+  const slab = new THREE.Mesh(
+    (() => { const g = new THREE.ExtrudeGeometry(shape, { depth: .06, bevelEnabled: false });
+             g.rotateX(-Math.PI / 2); return g; })(),
+    new THREE.MeshStandardMaterial({ color: 0x6d6055, roughness: .95 }));
+  slab.position.y = -.06;
+  slab.receiveShadow = true;
+  shaftGroup.add(slab);
+
+  const walls = new THREE.Mesh(
+    (() => { const g = new THREE.ExtrudeGeometry(shape, { depth: H, bevelEnabled: false });
+             g.rotateX(-Math.PI / 2); return g; })(), wallMat);
+  walls.receiveShadow = true;
+  shaftGroup.add(walls);
+
+  // A line along the top of the walls, so the room reads as a room from outside.
+  const rim = new THREE.BufferGeometry().setFromPoints(
+    [...poly, poly[0]].map(p => new THREE.Vector3(p.x * IN, H, p.y * IN)));
+  shaftGroup.add(new THREE.Line(rim, new THREE.LineBasicMaterial({ color: 0x8d5a3a })));
+
+  scene.add(shaftGroup);
+  placeObject();
+  frameAll();
+}
+
 function build() {
   if (shaftGroup) scene.remove(shaftGroup);
   shaftGroup = new THREE.Group();
+
+  if (M.room && M.room.length >= 3) return buildRoom();
 
   const { a, b, rise, going, treads, winders, headroom } = M;
   const straight = Math.max(1, treads - winders);
@@ -676,6 +745,7 @@ function dimensionLabel(L, W, H, clear, note) {
 
 
 function floorAtInches(x, y) {
+  if (M.room && M.room.length >= 3) return 0;
   const straight = Math.max(1, M.treads - M.winders);
   if (y > M.a) {
     const i = Math.min(straight - 1, Math.max(0, Math.floor((y - M.a) / M.going)));
@@ -691,6 +761,18 @@ function floorAtInches(x, y) {
 /** Point the camera at the whole shaft, from the angle that reads best. */
 export function frameAll() {
   if (!shaftGroup || !camera) return;
+  if (M.room && M.room.length >= 3) {
+    const xs = M.room.map(p => p.x), ys = M.room.map(p => p.y);
+    const w = (Math.max(...xs) - Math.min(...xs)) * IN;
+    const d = (Math.max(...ys) - Math.min(...ys)) * IN;
+    const t = new THREE.Vector3((Math.min(...xs) * IN + w / 2), (M.ceiling || 96) * IN * 0.3,
+                                (Math.min(...ys) * IN + d / 2));
+    const reach = Math.max(w, d, 1);
+    camera.position.set(t.x + reach * 0.8, t.y + reach * 0.85, t.z + reach * 1.15);
+    controls.target.copy(t);
+    controls.update();
+    return;
+  }
   // Look at the turn from outside and above. Framing on the whole group puts
   // the camera inside two tall walls, which is what it was doing.
   const straight = Math.max(1, M.treads - M.winders);
