@@ -51,9 +51,10 @@ export const app = {
    * staircase: whether the thing physically stands inside the outline at all,
    * and whether the narrowest wall-to-wall gap will let it past.
    */
-  roomVerdict() {
+  roomVerdict(dims) {
     const d = Room.describe(this.room, this.ceiling);
-    const L = this.dims.length, W = this.dims.depth, H = this.dims.height;
+    const it = dims || this.dims;
+    const L = it.length, W = it.depth, H = it.height;
     const reasons = [];
 
     const standsFlat = d.longest >= Math.hypot(L, W) * 0.999 || d.longest >= L;

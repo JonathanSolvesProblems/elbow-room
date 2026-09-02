@@ -173,10 +173,11 @@ export function registerTools(app) {
   reg({
     name: 'check_fit',
     description:
-      'Decide whether an object of the given dimensions can physically travel up this staircase. ' +
-      'Checks the doorway, the straight run, and the winder turn, choosing the best orientation ' +
-      'and tilt for you. Returns which stage fails and by how much. Pass raw inches; all the ' +
-      'geometry is done here.',
+      'Decide whether an object of the given dimensions fits the place on screen. For a ' +
+      'staircase, checks the doorway, the straight run and the winder turn, choosing the best ' +
+      'orientation and tilt. For a traced room, checks the floor outline, the ceiling and the ' +
+      'narrowest gap between walls. Returns which stage fails and by how much. Pass raw inches; ' +
+      'all the geometry is done here. Call describe_staircase first to see which it is.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -191,11 +192,15 @@ export function registerTools(app) {
       const v = inches(args, ['length_in', 'depth_in', 'height_in']);
       if (typeof v === 'string') return reply(v);
       const { length_in, depth_in, height_in } = v;
-      const { checkPath } = await import('./geometry.js');
-      const r = checkPath(
-        { length: length_in, width: depth_in, height: height_in },
-        app.effectiveStair()
-      );
+      // A traced room has no doorway at the top and no winder turn, so running
+      // the staircase solver over it answered a question about my basement
+      // while the page on screen was showing someone's living room.
+      const r = app.room
+        ? app.roomVerdict({ length: length_in, depth: depth_in, height: height_in })
+        : (await import('./geometry.js')).checkPath(
+            { length: length_in, width: depth_in, height: height_in },
+            app.effectiveStair()
+          );
       return reply(
         `${r.verdict === 'goes' ? 'It goes.' : 'It does not go.'}\n` +
         r.reasons.map(x => `${x.pass ? 'OK' : 'FAILS'} at the ${x.stage}. ${x.detail}`).join('\n') +
@@ -209,7 +214,8 @@ export function registerTools(app) {
     description:
       'For an object of a given depth, report the longest it could be and still get round the ' +
       'turn, and the angle at which the corner pinches. This is the number that decides whether ' +
-      'a piece of furniture is worth buying.',
+      'a piece of furniture is worth buying. If a room is on screen rather than a staircase, ' +
+      'reports the longest straight run inside its walls instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -222,6 +228,19 @@ export function registerTools(app) {
       const v = inches(args, ['depth_in']);
       if (typeof v === 'string') return reply(v);
       const { depth_in } = v;
+      // There is no corner to get round in a traced room, and answering with
+      // the demo staircase's turn widths would be a confident wrong number.
+      if (app.room) {
+        const { describe } = await import('./room.js');
+        const d = describe(app.room, app.ceiling);
+        return reply(
+          `This is a traced room, not a staircase, so there is no turn to get round. ` +
+          `The longest straight run that stays inside these walls is ${ft(d.longest)}, ` +
+          `and the narrowest gap between two walls is ` +
+          `${isFinite(d.narrowest) ? ft(d.narrowest) : 'wider than the room'}. ` +
+          `At ${ft(depth_in)} deep, anything longer than ${ft(d.longest)} will not stand in it. ` +
+          `Use check_fit for the full answer.`);
+      }
       const c = app.longestAt(depth_in);
       if (c.tooWide) return reply(
         `Nothing. At ${ft(depth_in)} deep it is wider than the ${ft(app.stair.clearWidth)} run, ` +
@@ -240,6 +259,14 @@ export function registerTools(app) {
     inputSchema: { type: 'object', properties: {} },
     annotations: R,
     execute: async () => {
+      // The room's own uncertainty is a different thing from a staircase's
+      // provisional figures, and reciting the staircase's would have been an
+      // answer about a place that is not on screen.
+      if (app.room) return reply(
+        'This outline was traced by hand on one calibrated photograph, so every corner is only ' +
+        'as accurate as the click that placed it, and the ceiling height was typed in rather ' +
+        'than measured. Nothing here was stitched or reconstructed. Treat the floor area as ' +
+        'close, and tape anything the verdict turns on.');
       const u = app.unknowns();
       if (!u.length) return reply('Every figure has been measured.');
       return reply(u.map(x => `${x.field}: ${x.note}`).join('\n'));
@@ -362,6 +389,9 @@ export function registerTools(app) {
       required: ['removed']
     },
     execute: async ({ removed }) => {
+      if (app.room) return reply(
+        'There is a traced room on screen, not a staircase, so there is no door at the top to ' +
+        'take off. Measure the doorway on its own and check that with check_fit instead.');
       if (typeof removed === 'string') removed = !/^(false|no|0)$/i.test(removed.trim());
       if (typeof removed !== 'boolean') return reply('Say removed: true to take it off, false to rehang.');
       app.setDoorRemoved(removed);
@@ -403,6 +433,11 @@ export function registerTools(app) {
       required: ['field', 'inches']
     },
     execute: async (args, second) => {
+      // Every field here belongs to a staircase. Writing one while a room is on
+      // screen changed a model nobody could see and reported success for it.
+      if (app.room) return reply(
+        'A traced room is on screen, and none of these fields belong to it. Switch to a ' +
+        'staircase in the picker first, or retrace the room on the measure page.');
       const field = args.field;
       const v = inches(args, ['inches'], { min: 1, max: 240 });
       if (typeof v === 'string') return reply(v);
@@ -429,7 +464,12 @@ export function registerTools(app) {
    * ---------------------------------------------------------------- */
 
   function syncRemedies() {
-    const failing = app.verdict().verdict !== 'goes';
+    // Both remedies are answers about a winder turn: how much depth the feet
+    // are costing you through it, and how much shorter you would have to be to
+    // get round it. Neither means anything in a traced room, and offering them
+    // there would have had the agent quoting my staircase's corner about
+    // somebody's living room.
+    const failing = !app.room && app.verdict().verdict !== 'goes';
     if (failing && !remedyController) {
       remedyController = new AbortController();
       reg({
