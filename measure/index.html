@@ -1003,15 +1003,92 @@ document.getElementById('frame').oninput = e => {
 
 /* ---------- clicking ---------- */
 
-cv.onclick = e => {
+/**
+ * Clicking, and then adjusting what you clicked.
+ *
+ * Every number on this page is derived from two dots on a photograph, so the
+ * honest way to correct a reading is to correct the dots rather than to type
+ * over the answer. A corner placed two pixels out is inches out at an oblique
+ * angle, and until now the only remedy was to start the calibration again.
+ *
+ * So: any point already placed can be picked up and moved, and the reading
+ * follows it live.
+ */
+const at = e => {
   const r = cv.getBoundingClientRect();
-  const p = { x: (e.clientX - r.left) * (cv.width / r.width),
-              y: (e.clientY - r.top) * (cv.height / r.height) };
+  return { x: (e.clientX - r.left) * (cv.width / r.width),
+           y: (e.clientY - r.top) * (cv.height / r.height) };
+};
+
+/** The nearest draggable point to p, if one is close enough to have meant it. */
+function grab(p) {
+  const reach = 14 * (cv.width / Math.max(cv.getBoundingClientRect().width, 1));
+  let best = null, bestD = reach;
+  const consider = (q, apply) => {
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d <= bestD) { bestD = d; best = apply; }
+  };
+  S.refPoints.forEach((q, i) => consider(q, np => {
+    S.refPoints[i] = np;
+    S.compute();
+    // A moved corner changes the scale, so any reading taken from it is restated.
+    for (const m of S.marks) m.inches = distance(S.H, m.p, m.q);
+    if (last) last.inches = distance(S.H, last.p, last.q);
+    S.emit();
+  }));
+  for (const m of S.marks) {
+    consider(m.p, np => { m.p = np; m.inches = distance(S.H, m.p, m.q); S.emit(); });
+    consider(m.q, np => { m.q = np; m.inches = distance(S.H, m.p, m.q); S.emit(); });
+  }
+  return best;
+}
+
+let dragging = null;
+let justDragged = false;
+
+cv.addEventListener('pointerdown', e => {
+  if (!S.image) return;
+  const p = at(e);
+  // Only points that already exist can be dragged; a fresh click still places.
+  const holder = grab(p);
+  if (holder) {
+    dragging = holder;
+    cv.setPointerCapture(e.pointerId);
+    cv.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+});
+
+cv.addEventListener('pointermove', e => {
+  if (!dragging) {
+    if (S.image) cv.style.cursor = grab(at(e)) ? 'grab' : 'crosshair';
+    return;
+  }
+  dragging(at(e));
+  draw(); steps(); readout();
+});
+
+const dropPoint = () => {
+  if (!dragging) return;
+  dragging = null;
+  cv.style.cursor = 'crosshair';
+  draw(); steps(); readout();
+};
+cv.addEventListener('pointerup', dropPoint);
+cv.addEventListener('pointercancel', dropPoint);
+
+cv.onclick = e => {
+  // A drag ends with a click event; that click must not place a fifth point.
+  if (justDragged) { justDragged = false; return; }
+  const p = at(e);
+  if (grab(p) && (S.refPoints.length >= 4)) return;   // picking up, not placing
   if (S.refPoints.length < 4) { S.addPoint(p); }
   else if (!pending) { pending = p; }
   else { last = S.measure(pending, p); pending = null; }
   draw(); steps(); readout();
 };
+
+cv.addEventListener('pointerup', () => { if (dragging) justDragged = true; }, true);
 
 /* ---------- drawing ---------- */
 
@@ -1136,7 +1213,8 @@ function refShapeComplaint() {
 function readout() {
   const el = document.getElementById('reading');
   el.hidden = !last;
-  if (last) el.innerHTML = ft(last.inches) + '<small>' + last.inches.toFixed(1) + ' inches</small>';
+  if (last) el.innerHTML = ft(last.inches) +
+    '<small>' + last.inches.toFixed(1) + ' inches. Drag either end, or any corner, to adjust.</small>';
   document.getElementById('assign').disabled = !last;
   document.getElementById('assignWhy').textContent = last
     ? `Files this ${ft(last.inches)} into the measurement chosen above.`
