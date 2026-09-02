@@ -30,7 +30,11 @@
   .wrap { display:grid; grid-template-columns:1fr 23rem; min-height:100vh; }
   @media (max-width:900px) { .wrap { grid-template-columns:1fr; } }
 
-  .stage { position:relative; display:grid; place-items:center; padding:1rem; }
+  /* Top aligned, not centred. Centring meant the picture slid up and down the
+     moment the sidebar grew a line, which it does exactly when the fourth
+     corner lands, so the photograph moved under the cursor mid-calibration. */
+  .stage { position:relative; display:grid; justify-items:center; align-content:start;
+           padding:1rem; }
   #pano { width:100%; height:calc(100vh - 5rem); border-radius:10px;
           border:1px solid var(--line); cursor:crosshair; touch-action:none; }
   canvas { max-width:100%; max-height:calc(100vh - 2rem); border-radius:10px;
@@ -580,6 +584,7 @@ async function intake(files) {
   await breathe();
   useImage(gallery[0]);
   Loader.done();
+  rememberFrames();
 }
 
 function asImage(f) {
@@ -610,8 +615,10 @@ function renderStrip() {
 }
 
 function useImage(g) {
-  // Keep the bench, so a trip to the planner and back does not cost a decode.
-  setTimeout(() => { rememberWork(); rememberFrames(); }, 0);
+  // Only the cheap part here. Re-encoding twelve frames every time someone
+  // clicks a thumbnail froze the page for a second each click; the pictures are
+  // written once, by whoever built the strip.
+  setTimeout(rememberWork, 0);
   if (looksEquirectangular(g.img.width, g.img.height)) return startPano(g.img);
   S.image = g.img; S.reset();
   const max = 1100, k = Math.min(1, max / Math.max(g.img.width, g.img.height));
@@ -823,6 +830,7 @@ async function decodeHere(f) {
     await breathe();
     useImage(gallery[0]);
     Loader.done();
+    rememberFrames();
   } catch (e) {
     Loader.fail(`The decoder could not finish ${f.name}. ` +
                 String((e && e.message) || e).slice(0, 140));
@@ -1484,6 +1492,7 @@ async function openSession(x, n, say) {
     renderStrip();
     useImage(gallery[0]);
     Loader.done();
+    rememberFrames();
     say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, ` +
         `${x.counts ? x.counts['run.treads'] : '?'} steps, and ` +
         `${gallery.length} frame${gallery.length === 1 ? '' : 's'} back on screen.`);
