@@ -233,9 +233,11 @@
 
     <div id="roomBox" hidden>
       <h2>Trace the room</h2>
-      <p class="note" style="margin:0 0 .5rem">With the plane calibrated, clicking round where the
-        walls meet the floor turns those clicks into real inches. Go round the outline in order and
-        press Close the outline. Nothing is stitched: this is your photograph, measured.</p>
+      <p class="note" style="margin:0 0 .5rem">Clicking round where the walls meet the floor turns
+        those clicks into real inches. You can carry on across several frames of the same video:
+        pick another frame, click the same four reference corners on it, and the outline keeps
+        going. Corners from earlier frames show hollow.</p>
+      <p class="note" id="frameHint" hidden style="margin:0 0 .5rem;color:#c9902f"></p>
       <button id="traceStart">Start tracing the floor</button>
       <button id="traceHidden" hidden>Corner behind something</button>
       <button id="traceClose" hidden>Close the outline</button>
@@ -670,7 +672,8 @@ function renderStrip() {
   el.innerHTML = '';
   gallery.forEach((g, i) => {
     const t = document.createElement('img');
-    t.src = g.img.src; t.title = `${g.name} · sharpness ${g.a.sharpness.toFixed(1)}`;
+    t.src = g.thumb || g.img.src || (g.img.toDataURL ? g.img.toDataURL('image/jpeg', 0.6) : '');
+    t.title = `${g.name} · sharpness ${g.a.sharpness.toFixed(1)}`;
     if (i === 0) t.className = 'on';
     t.onclick = () => {
       [...el.children].forEach(c => c.classList.remove('on'));
@@ -682,6 +685,20 @@ function renderStrip() {
 }
 
 function useImage(g) {
+  // A different frame is a different camera position, so the plane has to be
+  // pinned again on that frame. The outline is in real inches and survives.
+  const carried = outline.length;
+  if (carried && S.image && S.image !== g.img) {
+    S.refPoints = [];
+    S.H = null;
+    S.Hinv = null;
+    const hint = document.getElementById('frameHint');
+    if (hint) {
+      hint.hidden = false;
+      hint.textContent = `New frame. Click the same four reference corners on this one and your ` +
+        `${carried} corners will reappear in their real places.`;
+    }
+  }
   // Only the cheap part here. Re-encoding twelve frames every time someone
   // clicks a thumbnail froze the page for a second each click; the pictures are
   // written once, by whoever built the strip.
@@ -969,10 +986,15 @@ async function loadVideo(f) {
     document.getElementById('scrub').hidden = false;
     const secs = isFinite(video.duration) ? `, ${video.duration.toFixed(1)} seconds` : '';
     Loader.at(1, 22, `${video.videoWidth} by ${video.videoHeight}${secs}`);
+    grabbed = [];
     const t = await bestFrameTime();
-    Loader.at(3, 92, `Sharpest frame at ${t.toFixed(1)} s`);
+    Loader.at(3, 88, `Sharpest frame at ${t.toFixed(1)} s`);
     await breathe();
-    grabFrame(t);
+    // Prefer the strip. If the frames could not be kept, fall back to the one.
+    // grabFrame closes the loader itself; the strip path has to do it here, and
+    // not doing so left the overlay up over a page that was already finished.
+    if (await stripFromGrabbed()) Loader.done();
+    else grabFrame(t);
     document.getElementById('frame').value =
       Math.round((t / Math.max(video.duration || 1, 0.001)) * 1000);
   };
@@ -1011,10 +1033,57 @@ async function bestFrameTime(samples = 12) {
     }
     const score = sum / (probe.width * probe.height);
     if (score > best.score) best = { t, score };
+
+    // Keep the frame, not just its score. The WebAssembly path already hands
+    // back a strip of candidates; the native path was throwing eleven of them
+    // away, which meant a room could only ever be traced on one view of it.
+    //
+    // Kept as canvases. Encoding twelve JPEGs mid-scan turned a seven second
+    // job into five minutes, because every toDataURL stalls on a readback.
+    // A canvas draws and measures exactly like an image everywhere this page
+    // uses one, so nothing downstream needs to know the difference.
+    const full = document.createElement('canvas');
+    const k = Math.min(1, 1100 / Math.max(video.videoWidth, video.videoHeight));
+    full.width = Math.max(2, (video.videoWidth * k) | 0);
+    full.height = Math.max(2, (video.videoHeight * k) | 0);
+    full.getContext('2d').drawImage(video, 0, 0, full.width, full.height);
+    grabbed.push({ canvas: full, t, score });
   }
   const note = document.getElementById('frametime');
   if (note) note.dataset.auto = best.score.toFixed(1);
   return best.t;
+}
+
+/** Frames kept while scanning, so both decode paths end with the same strip. */
+let grabbed = [];
+
+/** Turn those into the gallery, sharpest first, the way the WASM path does. */
+async function stripFromGrabbed() {
+  if (grabbed.length < 2) { grabbed = []; return false; }
+  gallery.length = 0;
+  for (let i = 0; i < grabbed.length; i++) {
+    Loader.at(3, 78 + (i / grabbed.length) * 18, `Scoring frame ${i + 1} of ${grabbed.length}`);
+    await breathe();
+    const c = grabbed[i].canvas;
+    // A thumbnail is small enough to encode without stalling; the frame itself
+    // stays a canvas.
+    let thumb = null;
+    try {
+      const t = document.createElement('canvas');
+      const k = 180 / Math.max(c.width, c.height);
+      t.width = Math.max(2, (c.width * k) | 0);
+      t.height = Math.max(2, (c.height * k) | 0);
+      t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+      thumb = t.toDataURL('image/jpeg', 0.6);
+    } catch { thumb = null; }
+    gallery.push({ img: c, thumb, name: `at ${grabbed[i].t.toFixed(1)} s`, a: assess(c) });
+  }
+  grabbed = [];
+  if (!gallery.length) return false;
+  gallery.sort((p, q) => q.a.sharpness - p.a.sharpness);
+  renderStrip();
+  useImage(gallery[0]);
+  return true;
 }
 
 function seekTo(t) {
@@ -1044,6 +1113,15 @@ function grabFrame(t) {
     const img = new Image();
     img.onload = () => {
       if (looksEquirectangular(img.width, img.height)) { Loader.done(); return startPano(img); }
+      // Scrubbing is a new camera position, so the plane has to be pinned again.
+      if (outline.length && S.image && S.image !== img) {
+        const hint = document.getElementById('frameHint');
+        if (hint) {
+          hint.hidden = false;
+          hint.textContent = `New frame. Click the same four reference corners on this one and ` +
+            `your ${outline.length} corners will reappear in their real places.`;
+        }
+      }
       S.image = img; S.reset(); draw(); steps();
       showAdvice(assess(img));
       rememberWork(); rememberFrames();
@@ -1079,7 +1157,21 @@ document.getElementById('frame').oninput = e => {
  * ---------------------------------------------------------------------- */
 
 let tracing = false;
-let outline = [];          // image-space points
+
+/**
+ * The outline, in real inches rather than pixels.
+ *
+ * A room has corners you cannot see from one spot, which is the whole reason
+ * someone films a walk through instead of taking one photograph. Storing the
+ * corners in world coordinates means a corner clicked on frame three and a
+ * corner clicked on frame nine belong to the same floor plan, as long as each
+ * frame was calibrated on the same physical rectangle. Every frame is then a
+ * window onto one room rather than a room of its own.
+ *
+ * Each entry is { x, y } in inches, plus `frame`, the strip index it came from,
+ * so the page can say which of them you are looking at now.
+ */
+let outline = [];
 
 const ROOM = 'elbowroom.room';
 
@@ -1088,9 +1180,20 @@ let squared = null;
 
 function outlineInches() {
   if (squared) return squared;
-  if (!S.H || outline.length < 3) return [];
-  const pts = outline.map(p => project(S.H, p));
-  return Room.originAtCorner(Room.normalise(pts)).poly;
+  if (outline.length < 3) return [];
+  return Room.originAtCorner(Room.normalise(outline.map(p => ({ x: p.x, y: p.y })))).poly;
+}
+
+/** Which strip frame is on screen, so corners can be tagged with where they came from. */
+function currentFrame() {
+  return Math.max(0, gallery.findIndex(g => g.img === S.image));
+}
+
+/** A world point drawn onto whatever frame is showing, or null if it is off it. */
+function toScreen(p) {
+  if (!S.Hinv) return null;
+  const q = project(S.Hinv, p);
+  return isFinite(q.x) && isFinite(q.y) ? q : null;
 }
 
 function roomFacts() {
@@ -1113,9 +1216,20 @@ function roomFacts() {
     `<li><span>floor area</span><span>${d.area.toFixed(1)} sq ft</span></li>` +
     `<li><span>narrowest gap</span><span>${isFinite(d.narrowest) ? ft(d.narrowest) : 'n/a'}</span></li>` +
     `<li><span>longest straight run</span><span>${ft(d.longest)}</span></li>`;
-  st.textContent = tracing
-    ? `${outline.length} corners. Press Close the outline when you are back where you started.`
-    : 'Traced. Send it to the planner and it becomes a room you can put things in.';
+  const here = currentFrame();
+  const mine = outline.filter(p => p.frame === here).length;
+  const elsewhere = outline.length - mine;
+  const across = elsewhere
+    ? ` ${mine} from this frame, ${elsewhere} carried over from others.`
+    : '';
+  st.textContent = !S.H && tracing
+    ? `Still tracing, ${outline.length} corners kept. Click the same four reference corners ` +
+      `on this frame to carry on.`
+    : tracing
+    ? `${outline.length} corners.${across} Press Close the outline when you are back ` +
+      `where you started.`
+    : `Traced from ${new Set(outline.map(p => p.frame)).size} frame(s). Send it to the planner ` +
+      `and it becomes a room you can put things in.`;
   return d;
 }
 
@@ -1196,7 +1310,8 @@ function persistRoom() {
       localStorage.setItem(ROOM, JSON.stringify({
         poly,
         ceiling: +document.getElementById('ceiling').value || 96,
-        traced: outline
+        traced: outline,
+        frames: [...new Set(outline.map(p => p.frame))].length
       }));
     } else {
       localStorage.removeItem(ROOM);
@@ -1351,14 +1466,21 @@ cv.onclick = e => {
   if (justDragged) { justDragged = false; return; }
   const p = at(e);
   snapshot();
+  // A new frame arrives with no plane, and tracing must not swallow the clicks
+  // that pin it, or the outline can never be continued on that frame.
+  if (tracing && !S.H) {
+    if (S.refPoints.length < 4) { S.addPoint(p); draw(); steps(); readout(); }
+    return;
+  }
   if (tracing) {
     if (hiddenPicks) {
       hiddenPicks.push(p);
       if (hiddenPicks.length === 4) {
-        const hit = Room.intersect(hiddenPicks[0], hiddenPicks[1], hiddenPicks[2], hiddenPicks[3]);
+        const w = hiddenPicks.map(q => project(S.H, q));
+        const hit = Room.intersect(w[0], w[1], w[2], w[3]);
         hiddenPicks = null;
         if (hit) {
-          outline.push(hit);
+          outline.push({ x: hit.x, y: hit.y, frame: currentFrame() });
           document.getElementById('roomState').textContent =
             'Corner placed where the two walls meet. Carry on round the room.';
         } else {
@@ -1375,7 +1497,9 @@ cv.onclick = e => {
       draw();
       return;
     }
-    outline.push(p);
+    if (!S.H) return;
+    const w = project(S.H, p);
+    outline.push({ x: w.x, y: w.y, frame: currentFrame() });
     squared = null;
     roomFacts();
     readout();
@@ -1418,21 +1542,40 @@ function draw() {
     hiddenPicks.forEach(p => dot(p, '#e0a33a'));
   }
 
-  // the room outline
-  if (outline.length) {
-    ctx.strokeStyle = '#6cc4ff';
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash(tracing ? [8, 6] : []);
-    ctx.beginPath();
-    outline.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-    if (!tracing && outline.length > 2) ctx.closePath();
-    ctx.stroke();
-    ctx.setLineDash([]);
-    if (!tracing && outline.length > 2) {
-      ctx.fillStyle = 'rgba(108,196,255,.13)';
-      ctx.fill();
+  // The room outline, projected from real inches onto whichever frame is up.
+  // Corners clicked on other frames appear here too, in their right places,
+  // because every calibrated frame shares one coordinate system.
+  if (outline.length && S.Hinv) {
+    const here = currentFrame();
+    const pts = outline.map(p => ({ s: toScreen(p), from: p.frame }));
+    const drawable = pts.filter(p => p.s);
+    if (drawable.length) {
+      ctx.strokeStyle = '#6cc4ff';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash(tracing ? [8, 6] : []);
+      ctx.beginPath();
+      drawable.forEach((p, i) => i ? ctx.lineTo(p.s.x, p.s.y) : ctx.moveTo(p.s.x, p.s.y));
+      if (!tracing && drawable.length > 2) ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (!tracing && drawable.length > 2) {
+        ctx.fillStyle = 'rgba(108,196,255,.13)';
+        ctx.fill();
+      }
+      // Corners from earlier frames are drawn hollow, so it is obvious which
+      // ones this view actually shows you and which are carried over.
+      pts.forEach((p, i) => {
+        if (!p.s) return;
+        if (p.from === here) dot(p.s, '#6cc4ff', String(i + 1));
+        else {
+          ctx.beginPath();
+          ctx.arc(p.s.x, p.s.y, 6, 0, Math.PI * 2);
+          ctx.strokeStyle = '#6cc4ff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      });
     }
-    outline.forEach((p, i) => dot(p, '#6cc4ff', String(i + 1)));
   }
 
   // measurements
@@ -1476,7 +1619,9 @@ function steps() {
   const redo = document.getElementById('redo');
   if (redo) redo.hidden = !S.image || S.refPoints.length === 0;
   const rb = document.getElementById('roomBox');
-  if (rb) rb.hidden = !S.H;
+  if (rb) rb.hidden = !S.H && !tracing;
+  const hint = document.getElementById('frameHint');
+  if (hint && S.H) hint.hidden = true;
 
   const warn = document.getElementById('planewarn');
   if (warn) {
@@ -1797,6 +1942,8 @@ async function dropFrames(key) {
 function galleryAsFrames() {
   return gallery.map(g => {
     const c = document.createElement('canvas');
+    // g.img may be a canvas from the native path or an Image from the rest.
+
     const k = Math.min(1, 900 / Math.max(g.img.width, g.img.height));
     c.width = Math.max(2, (g.img.width * k) | 0);
     c.height = Math.max(2, (g.img.height * k) | 0);

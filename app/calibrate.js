@@ -80,6 +80,7 @@ export function createSession() {
     refWidth: 41.5,       // inches, the real width of the reference
     refHeight: 41.5,      // inches, the real depth of the reference
     H: null,
+    Hinv: null,
     marks: [],            // named measurements the user has taken
     listeners: [],
 
@@ -97,7 +98,7 @@ export function createSession() {
     setReference(w, h) { this.refWidth = w; this.refHeight = h; this.compute(); this.emit(); },
 
     compute() {
-      if (this.refPoints.length !== 4) { this.H = null; return; }
+      if (this.refPoints.length !== 4) { this.H = null; this.Hinv = null; return; }
       // Clicked clockwise from the near-left corner.
       const dst = [
         { x: 0, y: 0 },
@@ -106,6 +107,11 @@ export function createSession() {
         { x: 0, y: this.refHeight }
       ];
       this.H = homography(this.refPoints, dst);
+      // And the way back. Real coordinates have to be drawable on whichever
+      // frame is on screen, which is what lets one room be traced across
+      // several frames of a walk through: calibrate each frame on the same
+      // physical rectangle and they all share one coordinate system.
+      this.Hinv = homography(dst, this.refPoints);
     },
 
     measure(p, q, label) {
