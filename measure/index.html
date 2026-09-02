@@ -236,6 +236,9 @@
     <p class="note" id="sendWhy">Saved in this browser only. Nothing is sent anywhere.</p>
 
     <h2>Your staircases</h2>
+    <p class="note" id="opened" hidden
+       style="margin:0 0 .5rem;color:var(--ok);border:1px solid var(--ok);
+              border-radius:8px;padding:.5rem .6rem"></p>
     <p class="note" id="noSessions" style="margin:0 0 .5rem">Nothing saved yet. Measure one and
       name it, and it will be here next time.</p>
     <ul class="marks" id="sessions"></ul>
@@ -1204,7 +1207,38 @@ function renderSessions() {
         else localStorage.removeItem(PHOTO);
       } catch { /* nothing to do */ }
       persist();
-      renderMarks(); readout();
+      renderMarks();
+      readout();
+
+      // Put the frame back on screen and say what happened. Opening a session
+      // used to change three lists further down the sidebar and nothing else,
+      // which from where the cursor was looked exactly like a dead link.
+      const n = Object.keys(x.readings || {}).length;
+      const say = msg => {
+        const el = document.getElementById('opened');
+        el.hidden = false;
+        el.textContent = msg;
+        clearTimeout(say._t);
+        say._t = setTimeout(() => { el.hidden = true; }, 9000);
+      };
+      if (x.photo) {
+        Loader.show('Opening ' + x.name, ['Reading the frame you measured on', 'Ready to carry on']);
+        const img = new Image();
+        img.onload = () => {
+          Loader.at(1, 80, `${img.width} by ${img.height}`);
+          useImage({ img, name: x.name, a: assess(img) });
+          Loader.done();
+          say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, ` +
+              `${x.counts ? x.counts['run.treads'] : '?'} steps, and the frame you measured on.`);
+        };
+        img.onerror = () => {
+          Loader.fail('That session’s frame could not be decoded, but its readings are back.');
+          say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}. Its photograph would not decode.`);
+        };
+        img.src = x.photo;
+      } else {
+        say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}. No photograph was kept with it.`);
+      }
     };
   });
   ul.querySelectorAll('[data-drop]').forEach(a => {

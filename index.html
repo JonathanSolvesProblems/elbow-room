@@ -115,7 +115,10 @@
   body.embedded { overflow:hidden; }
   body.embedded aside { display:none; }
   body.embedded .wrap { grid-template-columns:1fr; }
-  body.embedded .stage { grid-template-rows:none; grid-template-columns:1fr 1fr; min-height:0; height:100vh; }
+  /* Embedded, the grid used to reserve two columns whatever the tab said, so
+     picking Plan left an empty grey half where 3D would have been. */
+  body.embedded .stage { grid-template-rows:none; grid-template-columns:1fr; min-height:0; height:100vh; }
+  body.embedded .stage[data-view="both"] { grid-template-columns:1fr 1fr; }
   body.embedded .pane { min-height:0; }
 </style>
 </head>
@@ -162,6 +165,7 @@
       Basement winder turn of a 1970s house.</p>
 
     <div class="yours" id="mine" hidden></div>
+    <p class="note" id="switch" hidden style="margin:0 0 1rem"></p>
 
     <div class="banner" id="banner">
       <strong>No site tools in this browser.</strong>

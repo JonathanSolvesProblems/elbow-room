@@ -359,6 +359,20 @@ export function boot() {
   view.onChange(() => app.emit());
 
   app.select(CATALOGUE[0].id);
+  // A switch that is always on the page, so going between the staircase you
+  // measured and the one this app was built for is one click either way,
+  // instead of a link that only appears in the banner.
+  const onMine = new URLSearchParams(location.search).has('mine');
+  let hasOwn = false;
+  try { hasOwn = !!localStorage.getItem('elbowroom.staircase'); } catch { hasOwn = false; }
+  const sw = document.getElementById('switch');
+  if (sw && (hasOwn || onMine)) {
+    sw.hidden = false;
+    sw.innerHTML = onMine
+      ? 'Showing the staircase you measured. <a href="/">Show the 1970s house instead</a>.'
+      : 'Showing the 1970s house. <a href="/?mine=1">Show the staircase you measured</a>.';
+  }
+
   const mine = loadMine();
   const carried = loadObject();
   if (mine || carried) app.sync();
