@@ -222,6 +222,9 @@
       <div><label>depth in</label><input id="rh" type="number" step="0.25" value="41.5"></div>
     </div>
     <p class="note" id="refstate">Waiting for four corners.</p>
+    <p class="note" style="margin-top:.3rem;font-size:11.5px">Misclicked? Ctrl+Z, or the Undo
+      button, takes back one point at a time.</p>
+    <button id="undo" hidden style="margin-top:.35rem">Undo</button>
     <button id="redo" hidden style="margin-top:.35rem">Redo the corners</button>
     <p class="note" id="planewarn" hidden style="margin-top:.4rem;color:#c9902f"></p>
     </div>
@@ -1037,6 +1040,58 @@ document.getElementById('frame').oninput = e => {
 
 /* ---------- clicking ---------- */
 
+/* ---------------------------------------------------------------------- *
+ * Taking a click back.
+ *
+ * Every point here is placed by hand and hands miss. Until now the only way out
+ * of a bad corner was Redo the corners, which threw away all four, and there was
+ * no way at all to take back a measurement. So: a stack of snapshots, one per
+ * placement or drag, with Ctrl+Z and a button, because a phone has no Ctrl.
+ * ---------------------------------------------------------------------- */
+
+const history = [];
+
+function snapshot() {
+  history.push(JSON.stringify({
+    refPoints: S.refPoints, marks: S.marks, pending,
+    refWidth: S.refWidth, refHeight: S.refHeight
+  }));
+  if (history.length > 50) history.shift();
+  const u = document.getElementById('undo');
+  if (u) u.hidden = false;
+}
+
+function undo() {
+  const prev = history.pop();
+  if (!prev) return false;
+  let st; try { st = JSON.parse(prev); } catch { return false; }
+  S.refPoints = st.refPoints || [];
+  S.marks = st.marks || [];
+  pending = st.pending || null;
+  S.refWidth = st.refWidth;
+  S.refHeight = st.refHeight;
+  document.getElementById('rw').value = st.refWidth;
+  document.getElementById('rh').value = st.refHeight;
+  S.compute();
+  last = S.marks.length ? S.marks[S.marks.length - 1] : null;
+  const u = document.getElementById('undo');
+  if (u) u.hidden = history.length === 0;
+  S.emit();
+  draw(); steps(); readout();
+  return true;
+}
+
+document.getElementById('undo').onclick = () => undo();
+
+addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    // Not while someone is typing a dimension into a box.
+    const t = e.target;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if (undo()) e.preventDefault();
+  }
+});
+
 /**
  * Clicking, and then adjusting what you clicked.
  *
@@ -1096,6 +1151,7 @@ cv.addEventListener('pointermove', e => {
   const p = at(e);
   if (!dragging) {
     if (candidate && startedAt && Math.hypot(p.x - startedAt.x, p.y - startedAt.y) > SLOP) {
+      snapshot();
       dragging = candidate;
       cv.style.cursor = 'grabbing';
     } else {
@@ -1119,6 +1175,7 @@ cv.onclick = e => {
   // A drag ends with a click event; that click must not place a fifth point.
   if (justDragged) { justDragged = false; return; }
   const p = at(e);
+  snapshot();
   if (S.refPoints.length < 4) { S.addPoint(p); }
   else if (!pending) { pending = p; }
   else { last = S.measure(pending, p); pending = null; }
@@ -1224,6 +1281,34 @@ function refShapeComplaint() {
     return 'Those four corners cross over each other, which makes a bow tie rather than a ' +
            'rectangle, and no reading from it means anything. Press Redo the corners and click ' +
            'them all the way round: near left, near right, far right, far left.';
+  }
+
+  // Two corners in the same place, or all four nearly in a line, give a
+  // homography that is arithmetically valid and physically meaningless: a 41
+  // inch tread comes back as eighteen inches and nothing says why.
+  const span = Math.hypot(S.image ? S.image.width : cv.width, S.image ? S.image.height : cv.height);
+  const quad = [a, b2, c, d];
+  for (let i = 0; i < 4; i++) {
+    for (let j = i + 1; j < 4; j++) {
+      if (len(quad[i], quad[j]) < span * 0.012) {
+        return `Corners ${i + 1} and ${j + 1} are almost in the same place, so the shape has no ` +
+               `depth and the scale is guesswork. Press Redo the corners and put all four on ` +
+               `different corners of the same flat rectangle.`;
+      }
+    }
+  }
+  // Shoelace area against the box it sits in. A genuinely oblique tread stays a
+  // healthy fraction of its own bounding box; a near-straight line does not.
+  const area = Math.abs(quad.reduce((acc, p1, i) => {
+    const p2 = quad[(i + 1) % 4];
+    return acc + (p1.x * p2.y - p2.x * p1.y);
+  }, 0)) / 2;
+  const bw = Math.max(...quad.map(q => q.x)) - Math.min(...quad.map(q => q.x));
+  const bh = Math.max(...quad.map(q => q.y)) - Math.min(...quad.map(q => q.y));
+  if (bw * bh > 0 && area / (bw * bh) < 0.18) {
+    return 'Those four corners are very nearly in a straight line, so there is almost no shape ' +
+           'to take a scale from. Press Redo the corners and click a rectangle you can actually ' +
+           'see the depth of.';
   }
 
   // Only the mistake actually worth catching: a long thin thing clicked while
@@ -1761,6 +1846,7 @@ document.getElementById('send').onclick = () => {
  * takes back the four clicks and nothing else.
  */
 document.getElementById('redo').onclick = () => {
+  snapshot();
   const img = S.image;
   S.reset();
   S.image = img;
@@ -1771,6 +1857,8 @@ document.getElementById('redo').onclick = () => {
 document.getElementById('reset').onclick = async () => {
   S.reset(); pending = null; last = null;
   S.image = null;
+  history.length = 0;
+  document.getElementById('undo').hidden = true;
   gallery.length = 0;
   renderStrip();
   await forgetWork();
