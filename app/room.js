@@ -224,7 +224,10 @@ export function squareUp(poly, toleranceDeg = 22) {
       if (off < bestOff) { bestOff = off; best = cand; }
     }
     if (bestOff > tol) return { p: a, q: b };      // leave a genuine diagonal alone
-    snapped++;
+    // Count a wall as snapped only if it actually turned. A parallelogram has
+    // two walls already dead level, and counting those told the person four
+    // walls had been pulled onto right angles when two of them never moved.
+    if (bestOff > 0.0005) snapped++;
     // Rotate about the wall's midpoint so it stays where it was.
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const half = Math.hypot(b.x - a.x, b.y - a.y) / 2;

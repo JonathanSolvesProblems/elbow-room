@@ -1270,7 +1270,9 @@ document.getElementById('traceSquare').onclick = () => {
   const sq = Room.squareUp(poly);
   if (!sq.snapped) {
     document.getElementById('roomState').textContent =
-      'Nothing here was close enough to a right angle to snap. Left as traced.';
+      'Nothing moved. Either these walls are square already, or none of them was ' +
+      'close enough to a right angle to pull onto one without inventing a room. ' +
+      'Left exactly as traced.';
     return;
   }
   // Squaring happens in real inches, so the traced image points are replaced by
