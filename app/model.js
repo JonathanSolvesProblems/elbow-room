@@ -27,14 +27,14 @@ function n(value, source, note) {
 }
 
 /**
- * A 1970s house. Basement staircase.
+ * The basement staircase of a 1970s house. Measured with a tape.
  * A straight run rising from the basement floor into three winder treads that
  * turn the flight through 90 degrees, then out through a doorway at the top.
  * A soffit crosses diagonally above the turn.
  */
 export const STAIRCASE = {
   id: 'ddo-basement',
-  label: 'Basement stairs, 1970s house',
+  label: 'My basement stairs',
 
   clearWidth: n(41.5, SOURCE.MEASURED,
     'Tape across the tread, finished wall to stringer. Photo 20260830_172820, read at full resolution.'),
