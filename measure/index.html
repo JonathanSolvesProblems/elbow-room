@@ -237,7 +237,9 @@
         walls meet the floor turns those clicks into real inches. Go round the outline in order and
         press Close the outline. Nothing is stitched: this is your photograph, measured.</p>
       <button id="traceStart">Start tracing the floor</button>
+      <button id="traceHidden" hidden>Corner behind something</button>
       <button id="traceClose" hidden>Close the outline</button>
+      <button id="traceSquare" hidden>Square it up</button>
       <button id="traceClear" hidden>Clear the outline</button>
       <label style="margin-top:.6rem">ceiling height, inches</label>
       <input id="ceiling" type="number" step="1" min="60" max="180" value="96">
@@ -1080,7 +1082,10 @@ let outline = [];          // image-space points
 const ROOM = 'elbowroom.room';
 
 /** The outline in real floor inches, origin at its own top left corner. */
+let squared = null;
+
 function outlineInches() {
+  if (squared) return squared;
   if (!S.H || outline.length < 3) return [];
   const pts = outline.map(p => project(S.H, p));
   return Room.originAtCorner(Room.normalise(pts)).poly;
@@ -1115,7 +1120,9 @@ function roomFacts() {
 function setTracing(on) {
   tracing = on;
   document.getElementById('traceStart').hidden = on || outline.length > 0;
+  document.getElementById('traceHidden').hidden = !on;
   document.getElementById('traceClose').hidden = !on;
+  document.getElementById('traceSquare').hidden = on || outline.length < 4;
   document.getElementById('traceClear').hidden = outline.length === 0;
   cv.style.cursor = on ? 'crosshair' : '';
   roomFacts();
@@ -1124,7 +1131,46 @@ function setTracing(on) {
   draw();
 }
 
-document.getElementById('traceStart').onclick = () => { outline = []; setTracing(true); };
+/**
+ * A corner you cannot see.
+ *
+ * Furniture hides half the corners in a real room, and guessing where a wall
+ * ends is the eyeballing this app exists to replace. Two points along each of
+ * the two walls give two lines, and walls meet where their lines meet, visible
+ * or not.
+ */
+let hiddenPicks = null;
+
+document.getElementById('traceHidden').onclick = () => {
+  hiddenPicks = [];
+  document.getElementById('roomState').textContent =
+    'Click two points along one wall, then two along the wall it meets. ' +
+    'The corner goes where those two lines cross, even behind the sofa.';
+};
+
+document.getElementById('traceSquare').onclick = () => {
+  const poly = outlineInches();
+  if (poly.length < 4) return;
+  const sq = Room.squareUp(poly);
+  if (!sq.snapped) {
+    document.getElementById('roomState').textContent =
+      'Nothing here was close enough to a right angle to snap. Left as traced.';
+    return;
+  }
+  // Squaring happens in real inches, so the traced image points are replaced by
+  // the tidied outline and the room is treated as measured from here on.
+  squared = sq.poly;
+  roomFacts();
+  persistRoom();
+  document.getElementById('roomState').textContent =
+    `Squared: ${sq.snapped} walls pulled onto right angles, the worst corner moving ` +
+    `${ft(sq.moved)}. Press Clear the outline to start over if that is too much.`;
+  draw();
+};
+
+document.getElementById('traceStart').onclick = () => {
+  outline = []; squared = null; hiddenPicks = null; setTracing(true);
+};
 document.getElementById('traceClose').onclick = () => {
   if (outline.length < 3) return;
   setTracing(false);
@@ -1132,6 +1178,8 @@ document.getElementById('traceClose').onclick = () => {
 };
 document.getElementById('traceClear').onclick = () => {
   outline = [];
+  squared = null;
+  hiddenPicks = null;
   setTracing(false);
   try { localStorage.removeItem(ROOM); } catch { /* nothing kept */ }
   roomFacts();
@@ -1302,7 +1350,31 @@ cv.onclick = e => {
   const p = at(e);
   snapshot();
   if (tracing) {
+    if (hiddenPicks) {
+      hiddenPicks.push(p);
+      if (hiddenPicks.length === 4) {
+        const hit = Room.intersect(hiddenPicks[0], hiddenPicks[1], hiddenPicks[2], hiddenPicks[3]);
+        hiddenPicks = null;
+        if (hit) {
+          outline.push(hit);
+          document.getElementById('roomState').textContent =
+            'Corner placed where the two walls meet. Carry on round the room.';
+        } else {
+          document.getElementById('roomState').textContent =
+            'Those two walls are parallel, so they never meet. Try again with two ' +
+            'walls that actually make a corner.';
+        }
+      } else {
+        document.getElementById('roomState').textContent =
+          `${hiddenPicks.length} of 4 points along the two walls.`;
+      }
+      roomFacts();
+      readout();
+      draw();
+      return;
+    }
     outline.push(p);
+    squared = null;
     roomFacts();
     readout();
     draw();
@@ -1329,6 +1401,21 @@ function draw() {
     ctx.stroke();
     S.refPoints.forEach((p, i) => dot(p, '#e0a33a', String(i + 1)));
   }
+  // the two walls being used to find a hidden corner
+  if (hiddenPicks && hiddenPicks.length) {
+    ctx.strokeStyle = '#e0a33a';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    for (let i = 0; i + 1 < hiddenPicks.length; i += 2) {
+      ctx.beginPath();
+      ctx.moveTo(hiddenPicks[i].x, hiddenPicks[i].y);
+      ctx.lineTo(hiddenPicks[i + 1].x, hiddenPicks[i + 1].y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    hiddenPicks.forEach(p => dot(p, '#e0a33a'));
+  }
+
   // the room outline
   if (outline.length) {
     ctx.strokeStyle = '#6cc4ff';

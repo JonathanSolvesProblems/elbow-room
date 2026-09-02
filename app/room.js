@@ -170,3 +170,83 @@ export function describe(poly, ceiling) {
     ceiling: ceiling || 96
   };
 }
+
+/* ---------------------------------------------------------------------- *
+ * When the corner is behind the sofa.
+ *
+ * Half the corners in a real room are hidden by furniture, and guessing where
+ * a wall ends is exactly the sort of eyeballing this whole app exists to avoid.
+ * Two points along each of the two walls define two lines, and walls meet where
+ * their lines meet, whether or not you can see the spot.
+ * ---------------------------------------------------------------------- */
+
+export function intersect(a1, a2, b1, b2) {
+  const d1x = a2.x - a1.x, d1y = a2.y - a1.y;
+  const d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+  const den = d1x * d2y - d1y * d2x;
+  if (Math.abs(den) < 1e-9) return null;          // parallel walls never meet
+  const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / den;
+  return { x: a1.x + t * d1x, y: a1.y + t * d1y };
+}
+
+/**
+ * Pull a nearly-rectilinear outline onto right angles.
+ *
+ * Rooms are mostly square and hands are not. Every edge is snapped to whichever
+ * of the two dominant directions it is closest to, then the corners are put
+ * back where the snapped walls actually meet. Edges that are genuinely off the
+ * grid, a bay window or a diagonal, are left alone.
+ *
+ * Returns the tidied outline and how far the worst corner had to move, so the
+ * change can be reported rather than performed quietly.
+ */
+export function squareUp(poly, toleranceDeg = 22) {
+  if (poly.length < 4) return { poly, moved: 0, snapped: 0 };
+
+  // The dominant direction: the angle of the longest wall, folded into 0..90.
+  let longest = 0, base = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d > longest) { longest = d; base = Math.atan2(b.y - a.y, b.x - a.x); }
+  }
+
+  const tol = toleranceDeg * Math.PI / 180;
+  let snapped = 0;
+  const lines = poly.map((a, i) => {
+    const b = poly[(i + 1) % poly.length];
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    // Nearest of base, base+90, base+180, base+270.
+    let best = ang, bestOff = Infinity;
+    for (let k = 0; k < 4; k++) {
+      const cand = base + k * Math.PI / 2;
+      let off = Math.abs(Math.atan2(Math.sin(ang - cand), Math.cos(ang - cand)));
+      if (off < bestOff) { bestOff = off; best = cand; }
+    }
+    if (bestOff > tol) return { p: a, q: b };      // leave a genuine diagonal alone
+    snapped++;
+    // Rotate about the wall's midpoint so it stays where it was.
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const half = Math.hypot(b.x - a.x, b.y - a.y) / 2;
+    return {
+      p: { x: mid.x - Math.cos(best) * half, y: mid.y - Math.sin(best) * half },
+      q: { x: mid.x + Math.cos(best) * half, y: mid.y + Math.sin(best) * half }
+    };
+  });
+
+  let moved = 0;
+  const out = poly.map((old, i) => {
+    const prev = lines[(i - 1 + lines.length) % lines.length];
+    const here = lines[i];
+    const hit = intersect(prev.p, prev.q, here.p, here.q);
+    if (!hit) return old;
+    moved = Math.max(moved, Math.hypot(hit.x - old.x, hit.y - old.y));
+    return hit;
+  });
+
+  // If squaring dragged a corner absurdly far the outline was not rectilinear
+  // to begin with, and the original is the more honest answer.
+  const span = Math.max(...poly.map(p => p.x)) - Math.min(...poly.map(p => p.x));
+  if (moved > Math.max(span * 0.25, 24)) return { poly, moved: 0, snapped: 0 };
+  return { poly: out, moved, snapped };
+}
