@@ -273,6 +273,8 @@
     </select>
     <button id="assign" disabled>Save this reading</button>
     <p class="note" id="assignWhy" style="margin-top:.4rem"></p>
+    <p class="note" id="unfiled" hidden style="margin-top:.35rem;color:var(--pinch);
+       border:1px solid var(--pinch);border-radius:8px;padding:.5rem .6rem"></p>
     <ul class="marks" id="marks"></ul>
     <p class="note" id="forgetWrap" hidden style="margin-top:.3rem">
       <a href="#" id="forget" style="color:var(--mut)">Forget these readings</a></p>
@@ -1382,7 +1384,7 @@ cv.onclick = e => {
   }
   if (S.refPoints.length < 4) { S.addPoint(p); }
   else if (!pending) { pending = p; }
-  else { last = S.measure(pending, p); pending = null; }
+  else { last = S.measure(pending, p); pending = null; filed = null; }
   draw(); steps(); readout();
 };
 
@@ -1571,8 +1573,16 @@ function refShapeComplaint() {
 function readout() {
   const el = document.getElementById('reading');
   el.hidden = !last;
+  const unfiled = last && last !== filed;
   if (last) el.innerHTML = ft(last.inches) +
-    '<small>' + last.inches.toFixed(1) + ' inches. Drag either end, or any corner, to adjust.</small>';
+    '<small>' + last.inches.toFixed(1) + ' inches. Drag either end, or any corner, to adjust.' +
+    (unfiled
+      ? '<br><strong style="color:var(--pinch)">Not filed yet. Choose what it is below and ' +
+        'press Save this reading, or it will not reach the planner.</strong>'
+      : '<br>Filed. It will travel with this staircase.') + '</small>';
+  // And make the button that files it look like the thing to press.
+  const a = document.getElementById('assign');
+  if (a) a.classList.toggle('primary', !!unfiled);
   document.getElementById('assign').disabled = !last;
   document.getElementById('assignWhy').textContent = last
     ? `Files this ${ft(last.inches)} into the measurement chosen above.`
@@ -1592,7 +1602,16 @@ function readout() {
   // A traced room is reason enough to go to the planner, even with no readings
   // filed against the staircase: the room is the thing you want to stand in.
   const traced = outline.length >= 3;
+  const pendingRead = last && last !== filed;
   document.getElementById('send').disabled = !n && !traced;
+  const warn = document.getElementById('unfiled');
+  if (warn) {
+    warn.hidden = !pendingRead;
+    if (pendingRead) {
+      warn.textContent = `The ${ft(last.inches)} on screen is not filed against anything yet. ` +
+        `Pick what it is above and press Save this reading, or it will not travel.`;
+    }
+  }
   document.getElementById('sendWhy').textContent =
     traced && !n
       ? 'Your traced room goes to the planner. Kept in this browser only.'
@@ -1610,8 +1629,11 @@ function sync() {
   draw(); steps();
 }
 
+let filed = null;   // the reading that has actually been put into a measurement
+
 document.getElementById('assign').onclick = () => {
   if (!last) return;
+  filed = last;
   saved[document.getElementById('field').value] = +last.inches.toFixed(1);
   persist();
   renderMarks(); readout();
@@ -2040,9 +2062,13 @@ document.getElementById('saveSession').onclick = async () => {
   if (!n) {
     el.style.color = 'var(--pinch)';
     el.style.borderColor = 'var(--pinch)';
+    const pending = last && last !== filed
+      ? `You have a ${ft(last.inches)} reading on screen that was never filed. ` +
+        `Choose what it is under Assign to your staircase and press Save this reading. `
+      : '';
     el.textContent = `${name} is saved with ${frames.length} frame` +
-      `${frames.length === 1 ? '' : 's'}, but no measurements. In the planner it will show ` +
-      `the default staircase wearing your photograph. Take a reading, press Save this reading, ` +
+      `${frames.length === 1 ? '' : 's'}, but no measurements. ${pending}` +
+      `In the planner it will show the default staircase wearing your photograph, ` +
       `then save this staircase again.`;
   } else {
     el.style.color = 'var(--ok)';
