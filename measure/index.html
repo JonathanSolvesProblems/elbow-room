@@ -160,11 +160,13 @@
 
     <h2>How this works</h2>
     <ol class="steps" id="steps">
-      <li id="s1">Load a photo of the floor at your turn.</li>
-      <li id="s2">Click the four corners of something you know the size of, clockwise. A tread, a
-        floor tile, a sheet of paper.</li>
-      <li id="s3">Tell me its real size.</li>
-      <li id="s4">Now click any two points and get real inches.</li>
+      <li id="s1">Load a photo of the surface you want to measure.</li>
+      <li id="s2">Click the four corners of something <strong>flat, rectangular and lying on
+        that same surface</strong>, clockwise from the near left. A stair tread (the flat part
+        you step on), a floor tile, a sheet of paper.</li>
+      <li id="s3">Type its real size below. This is the only thing telling the page what scale
+        the photograph is at, so a guess here is a guess in every number after it.</li>
+      <li id="s4">Now click any two points on that same surface and get real inches.</li>
     </ol>
 
     <div id="panoBox" hidden>
@@ -179,11 +181,15 @@
 
     <div id="flatBox">
     <h2>The reference</h2>
+    <p class="note" style="margin:0 0 .5rem">The <strong>real</strong> size of the rectangle you
+      just clicked, in inches. It starts at a 41 and a half inch stair tread because that is
+      this house's; change it to whatever you actually clicked.</p>
     <div class="two">
       <div><label>width in</label><input id="rw" type="number" step="0.25" value="41.5"></div>
       <div><label>depth in</label><input id="rh" type="number" step="0.25" value="41.5"></div>
     </div>
     <p class="note" id="refstate">Waiting for four corners.</p>
+    <p class="note" id="planewarn" hidden style="margin-top:.4rem;color:#c9902f"></p>
     </div>
 
     <div id="advice" class="advice" hidden></div>
@@ -1044,6 +1050,17 @@ function steps() {
   document.getElementById('refstate').textContent = S.H
     ? `Calibrated against ${ft(S.refWidth)} by ${ft(S.refHeight)}. Click any two points.`
     : `Waiting for ${4 - S.refPoints.length} more corner(s).`;
+
+  // One plane at a time. Calibrating on a couch cushion and then measuring the
+  // floor gives a confident wrong answer, and nothing on screen said so.
+  const warn = document.getElementById('planewarn');
+  if (warn) {
+    warn.hidden = !S.H;
+    warn.textContent = S.H
+      ? 'Measure only things lying on the same surface as that rectangle. A reference on a ' +
+        'seat cannot measure the floor.'
+      : '';
+  }
 }
 
 function readout() {
