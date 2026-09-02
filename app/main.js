@@ -272,7 +272,7 @@ function loadMine() {
       el.innerHTML = `<strong>This is your staircase.</strong> ${n} reading` +
         `${n > 1 ? 's' : ''} from your own photograph, kept in this browser. ` +
         `Everything below is computed from ${n > 1 ? 'them' : 'it'}. ` +
-        `<a href="/">Use the 1970s house instead</a>.`;
+        `<a href="/">Use the demo staircase instead</a>.`;
     }
     const tag = document.getElementById('tag');
     if (tag) tag.textContent = 'Before you buy the couch, find out whether it can get up the stairs.';
@@ -297,7 +297,7 @@ function loadMine() {
 function loadObject() {
   // Behind the same switch as the staircase. Without this, anyone who had ever
   // measured a wardrobe got their wardrobe on the demo page for ever, and the
-  // "use the 1970s house instead" link led back to a page that was still
+  // "use the demo staircase instead" link led back to a page that was still
   // half theirs.
   if (!new URLSearchParams(location.search).has('mine')) return null;
   let raw = null;
@@ -511,7 +511,7 @@ export function boot() {
 
   /** Everything the picker can offer, demo first. */
   const staircases = () => {
-    const list = [{ id: '', name: 'The 1970s house', note: 'the one this app was built for',
+    const list = [{ id: '', name: 'The demo staircase', note: 'the one this app was built for',
                     fixed: true }];
     const working = readJson('elbowroom.staircase', null);
     if (working && Object.keys(working).length) {
@@ -528,16 +528,27 @@ export function boot() {
                         `${ft(d.ceiling)} ceiling` });
     }
     for (const x of readJson('elbowroom.sessions', []) || []) {
-      if (x && x.name) {
-        // Count only real measurements. Step counts alone cannot size a staircase.
-        const measured = Object.keys(x.readings || {}).filter(k => !/treads$/.test(k)).length;
-        list.push({ id: 'saved:' + x.name, name: x.name, measured,
-                    note: measured
-                      ? `${measured} reading${measured === 1 ? '' : 's'}` +
-                        (x.frames ? `, ${x.frames} frames` : '')
-                      : `no measurements yet` + (x.frames ? `, ${x.frames} frames` : ''),
-                    readings: x.readings, counts: x.counts, photo: x.photo });
+      if (!x || !x.name) continue;
+      // A session that carries a traced floor is a room, not a staircase with
+      // nothing in it. Reading it as a staircase is what put the demo shaft on
+      // screen after someone saved and reopened their living room.
+      if (x.room && Array.isArray(x.room.poly) && x.room.poly.length >= 3) {
+        const d = Room.describe(x.room.poly, x.room.ceiling);
+        list.push({ id: 'saved:' + x.name, name: x.name, room: x.room.poly,
+                    ceiling: x.room.ceiling, photo: x.photo,
+                    note: `${d.corners} corners, ${d.area.toFixed(0)} sq ft, ` +
+                          `${ft(d.ceiling)} ceiling` +
+                          (x.frames ? `, ${x.frames} frames` : '') });
+        continue;
       }
+      // Count only real measurements. Step counts alone cannot size a staircase.
+      const measured = Object.keys(x.readings || {}).filter(k => !/treads$/.test(k)).length;
+      list.push({ id: 'saved:' + x.name, name: x.name, measured,
+                  note: measured
+                    ? `${measured} reading${measured === 1 ? '' : 's'}` +
+                      (x.frames ? `, ${x.frames} frames` : '')
+                    : `no measurements yet` + (x.frames ? `, ${x.frames} frames` : ''),
+                  readings: x.readings, counts: x.counts, photo: x.photo });
     }
     return list;
   };
@@ -551,7 +562,10 @@ export function boot() {
     if (app.room) {
       STAIRCASE.label = entry.name;
       solid.setSkin(null);
-      try {
+      // A saved room brings its own photograph. Falling straight through to the
+      // loose one dressed every saved room in whichever frame was measured last.
+      if (entry.photo) solid.setSkin(entry.photo);
+      else try {
         const sk = localStorage.getItem('elbowroom.photo');
         if (sk) solid.setSkin(sk);
       } catch { /* no skin kept */ }
@@ -664,12 +678,22 @@ export function boot() {
   const carried = loadObject();
   if (mine || carried) app.sync();
   if (onMine) {
-    // A traced room is the more specific thing you just made, so it wins over
-    // loose readings when both arrive together.
-    const hasRoom = staircases().some(x => x.id === '__room');
-    try { localStorage.setItem(ACTIVE, hasRoom ? '__room' : '__working'); } catch { /* none */ }
-    const pickThis = staircases().find(x => x.id === (hasRoom ? '__room' : '__working'));
-    if (pickThis && pickThis.room) useStaircase(pickThis);
+    // Send to planner names the one it means, and that beats guessing. Without
+    // this, arriving from a named session landed on the loose working copy and
+    // the row you clicked was not the row that opened.
+    let asked = '';
+    try { asked = localStorage.getItem(ACTIVE) || ''; } catch { asked = ''; }
+    const named = asked.startsWith('saved:') && staircases().find(x => x.id === asked);
+    if (named) {
+      useStaircase(named);
+    } else {
+      // A traced room is the more specific thing you just made, so it wins over
+      // loose readings when both arrive together.
+      const hasRoom = staircases().some(x => x.id === '__room');
+      try { localStorage.setItem(ACTIVE, hasRoom ? '__room' : '__working'); } catch { /* none */ }
+      const pickThis = staircases().find(x => x.id === (hasRoom ? '__room' : '__working'));
+      if (pickThis && pickThis.room) useStaircase(pickThis);
+    }
   }
   else {
     // Whatever was chosen last, so the planner opens where you left it.

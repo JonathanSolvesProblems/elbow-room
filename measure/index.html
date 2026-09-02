@@ -1311,6 +1311,7 @@ function persistRoom() {
         poly,
         ceiling: +document.getElementById('ceiling').value || 96,
         traced: outline,
+        squared: !!squared,
         frames: [...new Set(outline.map(p => p.frame))].length
       }));
     } else {
@@ -1324,8 +1325,34 @@ function restoreRoom() {
   try { r = JSON.parse(localStorage.getItem(ROOM) || 'null'); } catch { return; }
   if (!r) return;
   if (Array.isArray(r.traced)) outline = r.traced;
+  // Squaring is a decision, not a redrawing. Without this the tidied outline
+  // was thrown away on every reload and the raw traced corners came back.
+  if (Array.isArray(r.poly) && r.squared) squared = r.poly;
   if (r.ceiling) document.getElementById('ceiling').value = r.ceiling;
   setTracing(false);
+}
+
+/** The outline as something a saved session or the planner can hold. */
+function roomAsSaved() {
+  const poly = outlineInches();
+  if (poly.length < 3) return null;
+  return { poly, ceiling: +document.getElementById('ceiling').value || 96 };
+}
+
+/** Put a saved room back on this page, so reopening resumes the tracing too. */
+function restoreSavedRoom(room) {
+  outline = [];
+  squared = null;
+  hiddenPicks = null;
+  if (room && Array.isArray(room.poly) && room.poly.length >= 3) {
+    squared = room.poly;
+    outline = room.traced && Array.isArray(room.traced) && room.traced.length >= 3
+      ? room.traced
+      : room.poly.map((p, i) => ({ x: p.x, y: p.y, frame: 0, i }));
+    if (room.ceiling) document.getElementById('ceiling').value = room.ceiling;
+  }
+  setTracing(false);
+  persistRoom();
 }
 
 /* ---------------------------------------------------------------------- *
@@ -2089,7 +2116,7 @@ function writeSessions(list) {
 }
 
 /** Bring a saved staircase back, pictures and all. */
-async function openSession(x, n, say) {
+async function openSession(x, what, say) {
   Loader.show('Opening ' + x.name, [
     'Reading the frames you kept',
     'Scoring them again',
@@ -2100,7 +2127,7 @@ async function openSession(x, n, say) {
     const list = stored && stored.length ? stored : (x.photo ? [{ name: x.name, url: x.photo }] : []);
     if (!list.length) {
       Loader.clear();
-      return say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}. No pictures were kept with it.`);
+      return say(`${x.name} is open: ${what}. No pictures were kept with it.`);
     }
     gallery.length = 0;
     for (let i = 0; i < list.length; i++) {
@@ -2111,7 +2138,7 @@ async function openSession(x, n, say) {
     }
     if (!gallery.length) {
       Loader.fail(`The pictures kept with ${x.name} would not decode. Its readings are back.`);
-      return say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, without its pictures.`);
+      return say(`${x.name} is open: ${what}, without its pictures.`);
     }
     Loader.at(1, 78, `${gallery.length} frame${gallery.length === 1 ? '' : 's'}`);
     await breathe();
@@ -2120,8 +2147,7 @@ async function openSession(x, n, say) {
     useImage(gallery[0]);
     Loader.done();
     rememberFrames();
-    say(`${x.name} is open: ${n} reading${n === 1 ? '' : 's'}, ` +
-        `${x.counts ? x.counts['run.treads'] : '?'} steps, and ` +
+    say(`${x.name} is open: ${what}, and ` +
         `${gallery.length} frame${gallery.length === 1 ? '' : 's'} back on screen.`);
   } catch (e) {
     Loader.fail(`Could not reopen ${x.name}. ${String((e && e.message) || e).slice(0, 100)}`);
@@ -2132,12 +2158,39 @@ function renderSessions() {
   const list = readSessions();
   const ul = document.getElementById('sessions');
   document.getElementById('noSessions').hidden = list.length > 0;
-  ul.innerHTML = list.map((x, i) =>
-    `<li><span>${String(x.name).slice(0, 26).replace(/</g, '&lt;')}` +
-    `<small style="color:var(--mut);display:block">${Object.keys(x.readings || {}).length} readings` +
-    `${x.frames ? ', ' + x.frames + ' frames' : ''}</small></span>` +
-    `<span><a href="#" data-load="${i}">open</a> &middot; ` +
-    `<a href="#" data-drop="${i}" style="color:var(--mut)">remove</a></span></li>`).join('');
+  ul.innerHTML = list.map((x, i) => {
+    // Say what it actually is. A traced room has no readings, and a row that
+    // read "0 readings" for a floor plan someone had just spent ten clicks on
+    // looked like the save had failed.
+    let what;
+    if (x.room && Array.isArray(x.room.poly) && x.room.poly.length >= 3) {
+      const d = Room.describe(x.room.poly, x.room.ceiling);
+      what = `room, ${d.corners} corners, ${d.area.toFixed(0)} sq ft`;
+    } else {
+      const n = Object.keys(x.readings || {}).filter(k => !/treads$/.test(k)).length;
+      what = `${n} reading${n === 1 ? '' : 's'}`;
+    }
+    return `<li><span>${String(x.name).slice(0, 26).replace(/</g, '&lt;')}` +
+      `<small style="color:var(--mut);display:block">${what}` +
+      `${x.frames ? ', ' + x.frames + ' frames' : ''}</small></span>` +
+      `<span><a href="#" data-load="${i}">reopen here</a> &middot; ` +
+      `<a href="#" data-plan="${i}">send to planner</a> &middot; ` +
+      `<a href="#" data-drop="${i}" style="color:var(--mut)">remove</a></span></li>`;
+  }).join('');
+  ul.querySelectorAll('[data-plan]').forEach(a => {
+    a.onclick = e => {
+      e.preventDefault();
+      const x = readSessions()[+a.dataset.plan];
+      if (!x) return;
+      // Name the one it means and jump. The session already carries its own
+      // outline and photograph, so nothing needs copying into the loose keys,
+      // which would only put a second identical room in the picker.
+      try {
+        localStorage.setItem('elbowroom.active', 'saved:' + x.name);
+      } catch { /* private mode, the planner falls back to the demo */ }
+      location.href = '/?mine=1';
+    };
+  });
   ul.querySelectorAll('[data-load]').forEach(a => {
     a.onclick = e => {
       e.preventDefault();
@@ -2153,6 +2206,7 @@ function renderSessions() {
         if (x.photo) localStorage.setItem(PHOTO, x.photo);
         else localStorage.removeItem(PHOTO);
       } catch { /* nothing to do */ }
+      restoreSavedRoom(x.room);
       persist();
       renderMarks();
       readout();
@@ -2160,7 +2214,13 @@ function renderSessions() {
       // Put the frame back on screen and say what happened. Opening a session
       // used to change three lists further down the sidebar and nothing else,
       // which from where the cursor was looked exactly like a dead link.
-      const n = Object.keys(x.readings || {}).length;
+      const isRoom = x.room && Array.isArray(x.room.poly) && x.room.poly.length >= 3;
+      const what = isRoom
+        ? (() => { const d = Room.describe(x.room.poly, x.room.ceiling);
+                   return `a ${d.area.toFixed(0)} square foot room, ${d.corners} corners`; })()
+        : (() => { const n = Object.keys(x.readings || {}).filter(k => !/treads$/.test(k)).length;
+                   return `${n} reading${n === 1 ? '' : 's'}, ` +
+                          `${x.counts ? x.counts['run.treads'] : '?'} steps`; })();
       const say = msg => {
         const el = document.getElementById('opened');
         el.hidden = false;
@@ -2168,7 +2228,7 @@ function renderSessions() {
         clearTimeout(say._t);
         say._t = setTimeout(() => { el.hidden = true; }, 9000);
       };
-      openSession(x, n, say);
+      openSession(x, what, say);
     };
   });
   ul.querySelectorAll('[data-drop]').forEach(a => {
@@ -2188,12 +2248,18 @@ document.getElementById('saveSession').onclick = async () => {
   const list = readSessions().filter(x => x.name !== name);
   const frames = galleryAsFrames();
   const kept = frames.length ? await putFrames(name, frames) : false;
+  // A traced floor is the thing you spent the clicks on, so it travels with the
+  // session. Without it, opening a saved room in the planner showed the default
+  // staircase, which looked exactly like the save had not worked.
+  const room = roomAsSaved();
+  if (room) room.traced = outline;
   list.unshift({
     name,
     savedAt: new Date().toISOString().slice(0, 10),
     readings: { ...saved },
     counts: counts(),
-    photo: frameAsPhoto(),
+    room,
+    photo: frameAsPhoto(!!room),
     frames: kept ? frames.length : 0
   });
   const trimmed = list.slice(0, 8);
@@ -2206,7 +2272,18 @@ document.getElementById('saveSession').onclick = async () => {
   el.hidden = false;
   // Saying "saved" for a staircase with no measurements in it is how someone
   // ends up in the planner wondering why it still looks like my house.
-  if (!n) {
+  if (room) {
+    // A room is finished when its outline closes. It has no tread readings and
+    // it does not need any, so the "no measurements" warning below is wrong for
+    // it and used to fire on every room anyone saved.
+    const d = Room.describe(room.poly, room.ceiling);
+    el.style.color = 'var(--ok)';
+    el.style.borderColor = 'var(--ok)';
+    el.textContent = `${name} saved as a room: ${d.corners} corners, ` +
+      `${d.area.toFixed(0)} square feet, ${ft(d.ceiling)} ceiling` +
+      (kept ? `, ${frames.length} frames` : '') +
+      `. Open it in the planner to stand things in it.`;
+  } else if (!n) {
     el.style.color = 'var(--pinch)';
     el.style.borderColor = 'var(--pinch)';
     const pending = last && last !== filed
@@ -2233,8 +2310,11 @@ document.getElementById('send').onclick = () => {
   persist();
   persistRoom();
   // A traced room is what you want to see when you arrive, so make it active.
+  // Set either way: leaving a previously opened saved session named here sent
+  // you back to that one instead of to the work you just pressed Send on.
   try {
-    if (outlineInches().length >= 3) localStorage.setItem('elbowroom.active', '__room');
+    localStorage.setItem('elbowroom.active',
+      outlineInches().length >= 3 ? '__room' : '__working');
   } catch { /* private mode */ }
   const photo = frameAsPhoto();
   try {
