@@ -3,7 +3,10 @@
   "start_url": "https://elbowroom.jonathanandrei.com",
   "browser": {
     "channel": "msedge",
-    "args": ["--enable-features=WebMCP"]
+    "args": [
+      "--enable-features=WebMCP"
+    ],
+    "color_scheme": "dark"
   },
   "shots": [
     {
@@ -11,9 +14,18 @@
       "capture_type": "web_screenshot",
       "note": "The planner as it opens: my staircase, my couch, plan and 3D.",
       "actions": [
-        { "type": "evaluate", "script": "() => localStorage.clear()" },
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/" },
-        { "type": "wait", "seconds": 3 }
+        {
+          "type": "evaluate",
+          "script": "() => localStorage.clear()"
+        },
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/"
+        },
+        {
+          "type": "wait",
+          "seconds": 3
+        }
       ]
     },
     {
@@ -22,10 +34,23 @@
       "duration": 6,
       "note": "check_fit called as an agent would call it. No clicking.",
       "actions": [
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/" },
-        { "type": "wait", "seconds": 3.5 },
-        { "type": "evaluate", "settle": 2.5, "script": "async () => { const ts = await document.modelContext.getTools(); const t = ts.find(x => x.name === 'check_fit'); await document.modelContext.executeTool(t, JSON.stringify({length_in: 91, depth_in: 36, height_in: 48})); }" },
-        { "type": "wait", "seconds": 1.5 }
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/"
+        },
+        {
+          "type": "wait",
+          "seconds": 3.5
+        },
+        {
+          "type": "evaluate",
+          "settle": 2.5,
+          "script": "async () => { const ts = await document.modelContext.getTools(); const t = ts.find(x => x.name === 'check_fit'); await document.modelContext.executeTool(t, JSON.stringify({length_in: 91, depth_in: 36, height_in: 48})); }"
+        },
+        {
+          "type": "wait",
+          "seconds": 1.5
+        }
       ]
     },
     {
@@ -34,10 +59,23 @@
       "duration": 8,
       "note": "show_pinch: the agent moves the couch to where it jams, on screen.",
       "actions": [
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/" },
-        { "type": "wait", "seconds": 3.5 },
-        { "type": "evaluate", "settle": 3.5, "script": "async () => { const ts = await document.modelContext.getTools(); const t = ts.find(x => x.name === 'show_pinch'); await document.modelContext.executeTool(t, '{}'); }" },
-        { "type": "wait", "seconds": 2 }
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/"
+        },
+        {
+          "type": "wait",
+          "seconds": 3.5
+        },
+        {
+          "type": "evaluate",
+          "settle": 3.5,
+          "script": "async () => { const ts = await document.modelContext.getTools(); const t = ts.find(x => x.name === 'show_pinch'); await document.modelContext.executeTool(t, '{}'); }"
+        },
+        {
+          "type": "wait",
+          "seconds": 2
+        }
       ]
     },
     {
@@ -45,10 +83,23 @@
       "capture_type": "web_screenshot",
       "note": "Three foot nine and a half: the number you take shopping.",
       "actions": [
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/" },
-        { "type": "wait", "seconds": 3 },
-        { "type": "evaluate", "settle": 2, "script": "async () => { const ts = await document.modelContext.getTools(); const t = ts.find(x => x.name === 'show_pinch'); await document.modelContext.executeTool(t, '{}'); }" },
-        { "type": "wait", "seconds": 1.5 }
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/"
+        },
+        {
+          "type": "wait",
+          "seconds": 3
+        },
+        {
+          "type": "evaluate",
+          "settle": 2,
+          "script": "async () => { const ts = await document.modelContext.getTools(); const t = ts.find(x => x.name === 'show_pinch'); await document.modelContext.executeTool(t, '{}'); }"
+        },
+        {
+          "type": "wait",
+          "seconds": 1.5
+        }
       ]
     },
     {
@@ -57,14 +108,38 @@
       "duration": 9,
       "note": "The remedy tools exist while the couch fails and unregister when a water heater fits.",
       "actions": [
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/probe/" },
-        { "type": "wait", "seconds": 3 },
-        { "type": "click", "selector": "#reg" },
-        { "type": "wait", "seconds": 2 },
-        { "type": "click", "selector": "#selfEcho" },
-        { "type": "wait", "seconds": 2 },
-        { "type": "click", "selector": "#unreg" },
-        { "type": "wait", "seconds": 2 }
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/probe/"
+        },
+        {
+          "type": "wait",
+          "seconds": 3
+        },
+        {
+          "type": "click",
+          "selector": "#reg"
+        },
+        {
+          "type": "wait",
+          "seconds": 2
+        },
+        {
+          "type": "click",
+          "selector": "#selfEcho"
+        },
+        {
+          "type": "wait",
+          "seconds": 2
+        },
+        {
+          "type": "click",
+          "selector": "#unreg"
+        },
+        {
+          "type": "wait",
+          "seconds": 2
+        }
       ]
     },
     {
@@ -72,9 +147,18 @@
       "capture_type": "web_screenshot",
       "note": "The measure page waiting for a photo or a video.",
       "actions": [
-        { "type": "evaluate", "script": "() => localStorage.clear()" },
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/measure/" },
-        { "type": "wait", "seconds": 2.5 }
+        {
+          "type": "evaluate",
+          "script": "() => localStorage.clear()"
+        },
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/measure/"
+        },
+        {
+          "type": "wait",
+          "seconds": 2.5
+        }
       ]
     },
     {
@@ -83,16 +167,46 @@
       "duration": 8,
       "note": "The shaft orbiting, which is where the video ends.",
       "actions": [
-        { "type": "navigate", "url": "https://elbowroom.jonathanandrei.com/" },
-        { "type": "wait", "seconds": 3.5 },
-        { "type": "click", "selector": ".tabs button[data-view='solid']" },
-        { "type": "wait", "seconds": 1 },
-        { "type": "click", "selector": "[data-cam='left']" },
-        { "type": "wait", "seconds": 1.2 },
-        { "type": "click", "selector": "[data-cam='left']" },
-        { "type": "wait", "seconds": 1.2 },
-        { "type": "click", "selector": "[data-cam='left']" },
-        { "type": "wait", "seconds": 2 }
+        {
+          "type": "navigate",
+          "url": "https://elbowroom.jonathanandrei.com/"
+        },
+        {
+          "type": "wait",
+          "seconds": 3.5
+        },
+        {
+          "type": "click",
+          "selector": ".tabs button[data-view='solid']"
+        },
+        {
+          "type": "wait",
+          "seconds": 1
+        },
+        {
+          "type": "click",
+          "selector": "[data-cam='left']"
+        },
+        {
+          "type": "wait",
+          "seconds": 1.2
+        },
+        {
+          "type": "click",
+          "selector": "[data-cam='left']"
+        },
+        {
+          "type": "wait",
+          "seconds": 1.2
+        },
+        {
+          "type": "click",
+          "selector": "[data-cam='left']"
+        },
+        {
+          "type": "wait",
+          "seconds": 2
+        }
       ]
     },
     {
@@ -101,10 +215,22 @@
       "duration": 9,
       "note": "A different origin asking my staircase and getting a real answer.",
       "actions": [
-        { "type": "navigate", "url": "https://halliwell-and-co.vercel.app/" },
-        { "type": "wait", "seconds": 4 },
-        { "type": "click", "selector": "#ask" },
-        { "type": "wait", "seconds": 4 }
+        {
+          "type": "navigate",
+          "url": "https://halliwell-and-co.vercel.app/"
+        },
+        {
+          "type": "wait",
+          "seconds": 4
+        },
+        {
+          "type": "click",
+          "selector": "#ask"
+        },
+        {
+          "type": "wait",
+          "seconds": 4
+        }
       ]
     },
     {
@@ -112,10 +238,22 @@
       "capture_type": "web_screenshot",
       "note": "The answer that came back across the origin boundary.",
       "actions": [
-        { "type": "navigate", "url": "https://halliwell-and-co.vercel.app/" },
-        { "type": "wait", "seconds": 4 },
-        { "type": "click", "selector": "#ask" },
-        { "type": "wait", "seconds": 4 }
+        {
+          "type": "navigate",
+          "url": "https://halliwell-and-co.vercel.app/"
+        },
+        {
+          "type": "wait",
+          "seconds": 4
+        },
+        {
+          "type": "click",
+          "selector": "#ask"
+        },
+        {
+          "type": "wait",
+          "seconds": 4
+        }
       ]
     }
   ]
