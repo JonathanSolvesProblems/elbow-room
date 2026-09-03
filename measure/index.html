@@ -265,6 +265,16 @@
       <ul class="marks" id="roomFacts"></ul>
       <p class="note" id="roomState" style="margin-top:.4rem"></p>
 
+      <div id="lookFor" hidden style="margin-top:.7rem;border:1px solid var(--ok);border-radius:9px;
+           padding:.7rem .75rem;background:var(--okfill)">
+        <strong style="display:block;font-size:13px">Find these same four corners</strong>
+        <p class="note" style="margin:.25rem 0 .5rem">This is the frame you already pinned. The
+          stitch only works if every frame is pinned to the <strong>same physical rectangle</strong>,
+          because that one rectangle is what puts them all in the same inches. A different
+          rectangle in a different part of the room is a different floor, and the two cancel out.</p>
+        <canvas id="lookForPic" style="width:100%;border-radius:6px;display:block"></canvas>
+      </div>
+
       <div id="stitchBox" hidden style="margin-top:.9rem;border-top:1px solid var(--line);padding-top:.8rem">
         <strong style="display:block;font-size:13px">Stitch the floor from your frames</strong>
         <p class="note" id="stitchWhy" style="margin:.3rem 0 .5rem"></p>
@@ -731,6 +741,7 @@ function rememberPlane() {
                   refPoints: S.refPoints.map(p => ({ ...p })),
                   refWidth: S.refWidth, refHeight: S.refHeight });
   stitchUI();
+  renderLookFor();
   // Straight away, without being asked. Pinning a frame is the whole input the
   // stitch needs, so waiting to be told to do it is asking for a click whose
   // answer is always yes. Debounced, because dragging a corner fires this on
@@ -1449,6 +1460,7 @@ let stitching = false;
 function stitchUI() {
   const box = document.getElementById('stitchBox');
   if (!box) return;
+  renderLookFor();
   const n = planes.size;
   box.hidden = n === 0 || !roomMode();
   const why = document.getElementById('stitchWhy');
@@ -1465,6 +1477,42 @@ function stitchUI() {
       `the rest of the strip by itself, and leaves out any it cannot place confidently rather ` +
       `than guessing, which on a plain floor is most of them.`;
   }
+}
+
+/**
+ * The frame you pinned, with its four corners drawn on it.
+ *
+ * Switching frames was a memory test: go and click the same four corners of the
+ * same object, from a different angle, with nothing on screen to say which
+ * object that was. So show it. Anyone can match a picture; nobody can match a
+ * rectangle they saw ninety seconds ago.
+ */
+function renderLookFor() {
+  const box = document.getElementById('lookFor');
+  if (!box) return;
+  const first = [...planes.entries()].find(([i]) => gallery[i]);
+  const here = currentFrame();
+  // Only while you are standing on a frame that is not pinned yet, and only
+  // once there is something to compare it against.
+  if (!first || !roomMode() || planes.has(here) || !S.image) { box.hidden = true; return; }
+  const [at, pl] = first;
+  const img = gallery[at].img;
+  const c = document.getElementById('lookForPic');
+  const w = 300, k = w / img.width;
+  c.width = w; c.height = Math.max(1, Math.round(img.height * k));
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0, c.width, c.height);
+  x.strokeStyle = '#1ec86a'; x.lineWidth = 2.5;
+  x.beginPath();
+  pl.refPoints.forEach((p, i) => i ? x.lineTo(p.x * k, p.y * k) : x.moveTo(p.x * k, p.y * k));
+  x.closePath(); x.stroke();
+  pl.refPoints.forEach((p, i) => {
+    x.beginPath(); x.arc(p.x * k, p.y * k, 7, 0, Math.PI * 2);
+    x.fillStyle = '#1ec86a'; x.fill();
+    x.fillStyle = '#08210f'; x.font = 'bold 10px system-ui'; x.textAlign = 'center';
+    x.fillText(String(i + 1), p.x * k, p.y * k + 3.5);
+  });
+  box.hidden = false;
 }
 
 /** Every pinned frame, paired with the picture it came from. */
@@ -1548,6 +1596,31 @@ async function runStitch(quiet) {
     mosaic.cameras = cams;
     const across = (mosaic.bounds.maxX - mosaic.bounds.minX) / 12;
     const down = (mosaic.bounds.maxY - mosaic.bounds.minY) / 12;
+
+    // A stitched floor can never be smaller than the rectangle it was
+    // calibrated against, unless the frames disagree about where that rectangle
+    // is. Two frames pinned to two different objects put two different floors
+    // in one coordinate system, and what survives is the sliver they happen to
+    // share, which is how twelve feet of hallway became two.
+    const refW = +document.getElementById('rw').value || 41.5;
+    const refH = +document.getElementById('rh').value || 41.5;
+    const wIn = mosaic.bounds.maxX - mosaic.bounds.minX;
+    const hIn = mosaic.bounds.maxY - mosaic.bounds.minY;
+    if (frames.length > 1 && (wIn < refW || hIn < refH)) {
+      st.style.color = 'var(--pinch)';
+      st.textContent =
+        `These ${frames.length} frames do not agree about where the floor is. What came out is ` +
+        `${across.toFixed(1)} by ${down.toFixed(1)} feet, smaller than the ` +
+        `${(refW / 12).toFixed(1)} by ${(refH / 12).toFixed(1)} foot rectangle you calibrated ` +
+        `against, which cannot happen when they match. Almost always this means the second ` +
+        `frame was pinned to a different object: the same four corners of the same physical ` +
+        `thing have to be clicked in every frame, because that one rectangle is what puts them ` +
+        `all in the same inches. Use the picture above as your target, or clear the outline and ` +
+        `start again from one frame.`;
+      persistRoom();
+      return;
+    }
+    st.style.color = '';
 
     /* A wrong reference size is silent, and it scales everything.
      *
@@ -2062,6 +2135,31 @@ function refShapeComplaint() {
     return 'Those four corners cross over each other, which makes a bow tie rather than a ' +
            'rectangle, and no reading from it means anything. Press Redo the corners and click ' +
            'them all the way round: near left, near right, far right, far left.';
+  }
+
+  // Clicked the right way round, but backwards.
+  //
+  // Four corners taken anticlockwise still make a perfectly good quadrilateral
+  // and a perfectly valid homography. What flips is which way is away: the
+  // plane's far side ends up on the near side, so asking for the floor in front
+  // of you returns pixels from above the horizon, and the stitched floor comes
+  // back as a photograph of the ceiling. Nothing else catches this, because
+  // arithmetically nothing is wrong.
+  //
+  // The test is geometric rather than a winding sign, so it holds whichever way
+  // the corners were labelled: a point nearer the camera than the reference
+  // must land lower down the picture than a point further away.
+  if (S.Hinv) {
+    const mid = S.refWidth / 2;
+    const near = project(S.Hinv, { x: mid, y: -S.refHeight * 0.6 });
+    const far = project(S.Hinv, { x: mid, y: S.refHeight * 1.6 });
+    if (isFinite(near.y) && isFinite(far.y) && near.y < far.y) {
+      return 'Those four corners are the right shape but the wrong way round, so the page ' +
+             'thinks the far side of your rectangle is the near side. Everything in front of ' +
+             'you gets read as being behind you, which is why a stitched floor comes back as a ' +
+             'picture of the ceiling. Press Redo the corners and click them the other way ' +
+             'round: near left, near right, far right, far left.';
+    }
   }
 
   // Two corners in the same place, or all four nearly in a line, give a
