@@ -172,30 +172,52 @@ export async function floorMosaic(frames, poly, { maxPx = 1400, onProgress,
     }
   }
 
-  const out = document.createElement('canvas');
-  out.width = W; out.height = H;
-  const octx = out.getContext('2d');
-  const dst = octx.createImageData(W, H);
+  const full = document.createElement('canvas');
+  full.width = W; full.height = H;
+  const fctx = full.getContext('2d');
+  const dst = fctx.createImageData(W, H);
+  // And where the paint actually landed, so the result can be cut down to it.
+  let pminX = W, pmaxX = -1, pminY = H, pmaxY = -1;
   for (let i = 0; i < W * H; i++) {
     const w = wsum[i];
     if (w <= 0) { dst.data[i * 4 + 3] = 0; continue; }
     covered++;
     for (let c = 0; c < 3; c++) dst.data[i * 4 + c] = Math.min(255, acc[i * 3 + c] / w);
     dst.data[i * 4 + 3] = 255;
+    const x = i % W, y = (i / W) | 0;
+    if (x < pminX) pminX = x;
+    if (x > pmaxX) pmaxX = x;
+    if (y < pminY) pminY = y;
+    if (y > pmaxY) pmaxY = y;
   }
-  octx.putImageData(dst, 0, 0);
+  fctx.putImageData(dst, 0, 0);
+  if (pmaxX < 0) return null;
+
+  // Cut it down to what was photographed. Without an outline the plate is
+  // sized by how far the plane reaches, which is much further than any one
+  // frame sees, so the result was a small picture in a large black field, and
+  // the size printed under it was the field rather than the picture.
+  const cw = pmaxX - pminX + 1, ch = pmaxY - pminY + 1;
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(full, pminX, pminY, cw, ch, 0, 0, cw, ch);
 
   return {
     canvas: out,
     // Where the picture sits, in the same inches as the outline, so the plan
     // and the 3D floor can both put it exactly where it belongs.
-    bounds: { minX, minY, maxX, maxY },
+    bounds: {
+      minX: minX + pminX / ppi, minY: minY + pminY / ppi,
+      maxX: minX + (pmaxX + 1) / ppi, maxY: minY + (pmaxY + 1) / ppi
+    },
     ppi,
     frames: frames.length,
     // What fraction of the traced floor any photograph actually saw. Honest,
     // and usually well short of everything, because a phone panning a room
     // never points at the floor under the sofa.
-    coverage: insideCount ? covered / insideCount : 0
+    coverage: insideCount ? covered / insideCount : 0,
+    // And what fraction of the picture that survives is paint rather than gap.
+    filled: cw * ch ? covered / (cw * ch) : 0
   };
 }
 
@@ -244,4 +266,146 @@ export function cameraFrom(Hinv, imgW, imgH) {
   const len = Math.hypot(look.x, look.y) || 1;
   return { x: C[0], y: C[1], height: Math.abs(C[2]),
            look: { x: look.x / len, y: look.y / len } };
+}
+
+/* ---------------------------------------------------------------------- *
+ * Pinning the rest of the frames for you.
+ *
+ * Pinning one frame is four clicks. Pinning twelve is forty-eight, and nobody
+ * is going to do that, which is why importing a video produced one photograph
+ * of the floor and not a floor.
+ *
+ * These are consecutive frames of one continuous pan, so the same four corners
+ * are in most of them, a little further along. That is enough for template
+ * matching: take a patch of the picture around each corner you clicked, and go
+ * and find it in the next frame by normalised cross correlation, which is the
+ * ordinary way to answer "where did this bit of picture move to" and is immune
+ * to the exposure changing between frames.
+ *
+ * It is deliberately conservative. A frame joins only if all four corners are
+ * found confidently AND the quad they make is still a sensible quadrilateral of
+ * roughly the right size, so a bad match drops the frame rather than warping
+ * the floor. Everything is matched on a downscaled greyscale copy, which is
+ * accurate to a pixel or two of the original, and that is the reason these
+ * frames contribute texture only. Every number this app reports still comes
+ * from a frame somebody pinned by hand.
+ * ---------------------------------------------------------------------- */
+
+/** A greyscale copy at a workable size, plus the scale used to get there. */
+function grey(img, wide = 520) {
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  const k = Math.min(1, wide / w0);
+  const w = Math.max(8, Math.round(w0 * k)), h = Math.max(8, Math.round(h0 * k));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(img, 0, 0, w, h);
+  const d = cx.getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  }
+  return { g, w, h, k };
+}
+
+/** Normalised cross correlation of a patch against a window of an image. */
+function findPatch(patch, R, img, cx, cy, radius) {
+  const { data: pd, n: pn, mean: pm, norm: pnorm } = patch;
+  if (!pnorm) return null;
+  let best = -2, bx = cx, by = cy;
+  const x0 = Math.max(R, Math.round(cx - radius)), x1 = Math.min(img.w - R - 1, Math.round(cx + radius));
+  const y0 = Math.max(R, Math.round(cy - radius)), y1 = Math.min(img.h - R - 1, Math.round(cy + radius));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      let sum = 0, sum2 = 0, dot = 0, i = 0;
+      for (let dy = -R; dy <= R; dy++) {
+        let row = (y + dy) * img.w + x - R;
+        for (let dx = -R; dx <= R; dx++, i++, row++) {
+          const v = img.g[row];
+          sum += v; sum2 += v * v; dot += v * pd[i];
+        }
+      }
+      const mean = sum / pn;
+      const norm = Math.sqrt(Math.max(1e-9, sum2 - pn * mean * mean));
+      const ncc = (dot - pn * mean * pm) / (norm * pnorm);
+      if (ncc > best) { best = ncc; bx = x; by = y; }
+    }
+  }
+  return { x: bx, y: by, score: best };
+}
+
+/** Is this still a sensible quadrilateral, of about the right size. */
+function plausibleQuad(q, refArea) {
+  const area = Math.abs(
+    q.reduce((s, p, i) => {
+      const n = q[(i + 1) % q.length];
+      return s + (p.x * n.y - n.x * p.y);
+    }, 0) / 2);
+  if (!(area > 0)) return false;
+  if (area < refArea * 0.25 || area > refArea * 4) return false;
+  // Convex, same turn direction at every corner, so no bow tie.
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    if (Math.abs(cross) < 1e-6) return false;
+    const s = Math.sign(cross);
+    if (!sign) sign = s; else if (s !== sign) return false;
+  }
+  return true;
+}
+
+/**
+ * Find one frame's four reference corners in every other frame.
+ *
+ * from: { img, refPoints } the frame somebody pinned by hand.
+ * others: [{ img, at }] the rest of the strip.
+ * Returns [{ at, refPoints, score }] for the frames it is confident about.
+ */
+export async function autoPin(from, others, { minScore = 0.72, onProgress } = {}) {
+  const base = grey(from.img);
+  const R = 12;                                     // an 25 by 25 patch
+  const pn = (2 * R + 1) * (2 * R + 1);
+  const patches = [];
+  for (const p of from.refPoints) {
+    const cx = Math.round(p.x * base.k), cy = Math.round(p.y * base.k);
+    if (cx < R || cy < R || cx >= base.w - R || cy >= base.h - R) return [];
+    const data = new Float32Array(pn);
+    let i = 0, sum = 0, sum2 = 0;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++, i++) {
+        const v = base.g[(cy + dy) * base.w + cx + dx];
+        data[i] = v; sum += v; sum2 += v * v;
+      }
+    }
+    const mean = sum / pn;
+    patches.push({ data, n: pn, mean, norm: Math.sqrt(Math.max(1e-9, sum2 - pn * mean * mean)),
+                   cx, cy });
+  }
+
+  const refArea = Math.abs(from.refPoints.reduce((s, p, i) => {
+    const n = from.refPoints[(i + 1) % from.refPoints.length];
+    return s + (p.x * n.y - n.x * p.y);
+  }, 0) / 2);
+
+  const found = [];
+  for (let f = 0; f < others.length; f++) {
+    if (onProgress) { onProgress(f / others.length); await new Promise(r => setTimeout(r, 0)); }
+    const o = others[f];
+    const gi = grey(o.img);
+    if (gi.w !== base.w || gi.h !== base.h) continue;    // a different shape entirely
+    const radius = Math.max(24, Math.round(gi.w * 0.22));
+    const hits = [];
+    let worst = 1;
+    for (const pt of patches) {
+      const hit = findPatch(pt, R, gi, pt.cx, pt.cy, radius);
+      if (!hit || hit.score < minScore) { worst = -1; break; }
+      worst = Math.min(worst, hit.score);
+      hits.push({ x: hit.x / gi.k, y: hit.y / gi.k });
+    }
+    if (worst < minScore || hits.length !== 4) continue;
+    if (!plausibleQuad(hits, refArea)) continue;
+    found.push({ at: o.at, refPoints: hits, score: worst });
+  }
+  return found;
 }

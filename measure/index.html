@@ -244,8 +244,8 @@
       <strong>What did you film?</strong>
       <p>The plane is set, so every pixel on that surface is inches now. What comes next depends
         on what you are measuring, and they are two different things.</p>
-      <button id="forkStairs" type="button">A staircase &mdash; measure its spans</button>
-      <button id="forkRoom" type="button">A room &mdash; trace its floor</button>
+      <button id="forkStairs" type="button">A staircase. Measure its spans.</button>
+      <button id="forkRoom" type="button">A room. Trace its floor.</button>
     </div>
 
     <div id="roomBox" hidden>
@@ -362,10 +362,10 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createSession, project, distance } from '../app/calibrate.js';
+import { createSession, project, distance, homography } from '../app/calibrate.js';
 import { looksEquirectangular, heightSensitivity } from '../app/pano.js';
 import * as Room from '../app/room.js';
-import { floorMosaic, cameraFrom } from '../app/stitch.js';
+import { floorMosaic, cameraFrom, autoPin } from '../app/stitch.js';
 import { ft } from '../app/units.js';
 
 const S = createSession();
@@ -1436,34 +1436,77 @@ function stitchUI() {
   box.hidden = n === 0 || !roomMode();
   const why = document.getElementById('stitchWhy');
   if (why) {
-    why.innerHTML = n < 2
-      ? `<strong>${n} frame pinned.</strong> One frame gives one photograph of the floor, ` +
-        `straightened out. Pick another frame from the strip and click the same four ` +
-        `reference corners on it, and it joins this one: more frames, more floor.`
-      : `<strong>${n} frames pinned</strong> to the same rectangle, so they share one set of ` +
-        `real inches and can be laid over each other.`;
+    const auto = [...matched.keys()].filter(i => !planes.has(i)).length;
+    why.innerHTML =
+      `<strong>${n} frame${n === 1 ? '' : 's'} pinned by hand` +
+      (auto ? `, ${auto} more matched automatically` : '') + `.</strong> ` +
+      `Frames pinned to the same rectangle share one set of real inches, so each can be warped ` +
+      `onto that floor and laid over the others. The page tries to find your four corners in ` +
+      `the rest of the strip by itself, and leaves out any it cannot place confidently rather ` +
+      `than guessing, which on a plain floor is most of them.`;
   }
 }
 
 /** Every pinned frame, paired with the picture it came from. */
 function pinnedFrames() {
   const out = [];
-  for (const [i, pl] of planes) {
+  const add = (i, pl, byHand) => {
     const g = gallery[i];
-    if (g && g.img) out.push({ img: g.img, H: pl.H, Hinv: pl.Hinv, at: i });
-  }
+    if (g && g.img) out.push({ img: g.img, H: pl.H, Hinv: pl.Hinv, at: i, byHand });
+  };
+  for (const [i, pl] of planes) add(i, pl, true);
+  for (const [i, pl] of matched) if (!planes.has(i)) add(i, pl, false);
   return out;
+}
+
+/**
+ * Frames pinned by matching, not by clicking. Kept apart from `planes` on
+ * purpose: these carry the picture and never a number.
+ */
+const matched = new Map();
+
+/** Go and find the pinned frame's four corners in all the others. */
+let autoTried = 0, autoFound = 0;
+
+async function autoPinRest(st) {
+  const hand = [...planes.entries()].find(([i]) => gallery[i]);
+  if (!hand) return 0;
+  const [at, pl] = hand;
+  const others = gallery.map((g, i) => ({ img: g.img, at: i }))
+                        .filter(o => o.at !== at && !planes.has(o.at) && !matched.has(o.at));
+  if (!others.length) return 0;
+  if (st) st.textContent = `Looking for your four corners in the other ${others.length} frames.`;
+  const hits = await autoPin({ img: gallery[at].img, refPoints: pl.refPoints }, others, {
+    onProgress: p => {
+      if (st) st.textContent = `Looking for your four corners in the other ${others.length} ` +
+        `frames, ${Math.round(p * 100)}%.`;
+    }
+  });
+  const dst = [
+    { x: 0, y: 0 }, { x: pl.refWidth, y: 0 },
+    { x: pl.refWidth, y: pl.refHeight }, { x: 0, y: pl.refHeight }
+  ];
+  for (const h of hits) {
+    matched.set(h.at, { H: homography(h.refPoints, dst), Hinv: homography(dst, h.refPoints),
+                        score: h.score });
+  }
+  autoTried += others.length;
+  autoFound += hits.length;
+  return hits.length;
 }
 
 async function runStitch(quiet) {
   if (stitching) return;
-  const frames = pinnedFrames();
-  if (!frames.length) return;
+  if (!pinnedFrames().length) return;
   stitching = true;
   const st = document.getElementById('stitchState');
   const go = document.getElementById('stitchGo');
   if (go) { go.disabled = true; go.textContent = 'Stitching'; }
   try {
+    // The whole strip, not just the frame you clicked. Forty-eight clicks to
+    // pin twelve frames is a cost nobody pays, so the page pays it.
+    await autoPinRest(st);
+    const frames = pinnedFrames();
     const poly = outlineInches();
     mosaic = await floorMosaic(frames, poly.length >= 3 ? poly : null, {
       onProgress: p => {
@@ -1485,12 +1528,26 @@ async function runStitch(quiet) {
     mosaic.cameras = cams;
     const across = (mosaic.bounds.maxX - mosaic.bounds.minX) / 12;
     const down = (mosaic.bounds.maxY - mosaic.bounds.minY) / 12;
+    const byHand = frames.filter(f => f.byHand).length;
+    const auto = frames.length - byHand;
     if (st) {
       st.textContent =
         `${frames.length} frame${frames.length === 1 ? '' : 's'} warped onto one floor: ` +
-        `${across.toFixed(1)} by ${down.toFixed(1)} feet, ` +
-        `${Math.round(mosaic.coverage * 100)}% of it actually photographed. ` +
-        `Send it to the planner and you can walk round it in 3D. ` +
+        `${across.toFixed(1)} by ${down.toFixed(1)} feet of it, ` +
+        `${Math.round((mosaic.filled || 0) * 100)}% painted. ` +
+        (auto
+          ? `You pinned ${byHand}; the other ${auto} were found by matching your four corners ` +
+            `in them, and carry picture only. Every number this app reports still comes from a ` +
+            `frame you pinned yourself. `
+          : autoTried
+            ? `It looked for your four corners in the other ${autoTried} frames and could not ` +
+              `place any of them confidently, so it left them out rather than guessing. That is ` +
+              `the usual answer on a plain floor: a floor looks the same everywhere, so a patch ` +
+              `of it matches almost anywhere, and walking rather than turning on the spot means ` +
+              `no single warp relates two frames. Pick another frame and click the same four ` +
+              `corners on it to add more floor by hand. `
+            : `Pick another frame from the strip and click the same four corners on it to add ` +
+              `more floor. `) +
         `Only the floor is stitched: a warp that is right for the floor is wrong for ` +
         `anything standing up off it, so the walls come from your outline, not from this.`;
     }
