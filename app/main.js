@@ -550,9 +550,15 @@ export function boot() {
                     fixed: true }];
     const working = readJson('elbowroom.staircase', null);
     if (working && Object.keys(working).length) {
-      list.push({ id: '__working', name: 'What you just measured',
-                  note: `${Object.keys(working).length} readings`,
-                  readings: working, fixed: true });
+      // Counted the same way a saved staircase is, so the honest warning about
+      // one or two readings leaving my shape underneath fires here too. It did
+      // not, and this is the entry someone lands on straight after measuring.
+      const measured = Object.keys(working).filter(k => !/treads$/.test(k)).length;
+      list.push({ id: '__working', name: 'What you just measured', measured,
+                  note: measured
+                    ? `${measured} reading${measured === 1 ? '' : 's'} of the 7 that shape it`
+                    : 'no measurements, only step counts',
+                  readings: working });
     }
     const room = readJson('elbowroom.room', null);
     if (room && Array.isArray(room.poly) && room.poly.length >= 3) {
@@ -560,7 +566,7 @@ export function boot() {
       const stitched = room.floor && room.floor.url;
       // A stitched floor with nothing traced round it is still somewhere: a
       // photograph of your own floor, in inches, with no walls claimed.
-      list.push({ id: '__room', fixed: true, room: room.poly, ceiling: room.ceiling,
+      list.push({ id: '__room', room: room.poly, ceiling: room.ceiling,
                   floor: room.floor || null, walls: room.walls !== false,
                   name: room.walls === false ? 'The floor you stitched' : 'The room you traced',
                   note: room.walls === false
@@ -716,16 +722,38 @@ export function boot() {
         d.textContent = 'remove';
         d.title = `Forget ${x.name}`;
         d.onclick = () => {
-          const rest = (readJson('elbowroom.sessions', []) || []).filter(s => s.name !== x.name);
-          try { localStorage.setItem('elbowroom.sessions', JSON.stringify(rest)); } catch { /* none */ }
-          try { indexedDB.open('elbowroom', 1).onsuccess = e => {
-            const db = e.target.result;
-            if (db.objectStoreNames.contains('frames')) {
-              db.transaction('frames', 'readwrite').objectStore('frames').delete(x.name);
+          // Three kinds of thing live in this list and each is thrown away
+          // differently. The loose room and the loose readings used to have no
+          // remove button at all, so a stitched floor from a mis-set reference
+          // sat at the top of the picker with no way to be rid of it.
+          try {
+            if (x.id === '__room') {
+              localStorage.removeItem('elbowroom.room');
+              localStorage.removeItem('elbowroom.photo');
+            } else if (x.id === '__working') {
+              localStorage.removeItem('elbowroom.staircase');
+              localStorage.removeItem('elbowroom.object');
+              localStorage.removeItem('elbowroom.photo');
+            } else {
+              const rest = (readJson('elbowroom.sessions', []) || []).filter(s => s.name !== x.name);
+              localStorage.setItem('elbowroom.sessions', JSON.stringify(rest));
+              indexedDB.open('elbowroom', 1).onsuccess = e => {
+                const db = e.target.result;
+                if (db.objectStoreNames.contains('frames')) {
+                  db.transaction('frames', 'readwrite').objectStore('frames').delete(x.name);
+                }
+              };
             }
-          }; } catch { /* nothing kept */ }
-          if (active === x.id) useStaircase(list[0]);
-          else renderPicker();
+          } catch { /* private mode, nothing was kept to remove */ }
+          if (active === x.id) {
+            // Back to the demo staircase, and clear what the removed one was
+            // wearing, or its photograph stayed on the walls of mine.
+            try { localStorage.setItem(ACTIVE, ''); } catch { /* none */ }
+            solid.setSkin(null);
+            const el = document.getElementById('mine');
+            if (el) el.hidden = true;
+            useStaircase(staircases()[0]);
+          } else renderPicker();
         };
         row.appendChild(d);
       }
@@ -778,16 +806,17 @@ export function boot() {
         sw.textContent = `${on.name} has no measurements in it, so this is the default shape ` +
           `wearing your photograph. Go back to Measure yours, take a reading, press Save this ` +
           `reading, then save the staircase again.`;
-      } else if (on.measured < 3) {
+      } else if (on.measured > 0 && on.measured < 3) {
         // One or two readings leave most of the shaft at my numbers, and the
         // page said "everything below is computed from this one" anyway, which
         // is how a hallway video ended up looking like my basement.
         sw.style.color = 'var(--pinch)';
         sw.textContent = `${on.name} has ${on.measured} reading` +
-          `${on.measured === 1 ? '' : 's'} in it, so most of this shape is still the default ` +
-          `one. Measure the turn and the run to make it yours. If what you filmed was a room ` +
-          `rather than a staircase, trace its floor on the measure page instead: that builds ` +
-          `an outline from your own clicks, and nothing here will fit it.`;
+          `${on.measured === 1 ? '' : 's'} in it out of the seven that decide a staircase's ` +
+          `shape, so what you are looking at is still mostly the demo staircase wearing your ` +
+          `number. Measure the clear width, both spans of the turn, the headroom, the rise and ` +
+          `the going to make it yours. If what you filmed was a room rather than a staircase, ` +
+          `trace its floor on the measure page instead.`;
       } else {
         sw.textContent = 'Everything below is computed from this one. Kept in this browser only.';
       }
