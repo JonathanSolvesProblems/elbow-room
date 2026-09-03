@@ -264,6 +264,15 @@
       <input id="ceiling" type="number" step="1" min="60" max="180" value="96">
       <ul class="marks" id="roomFacts"></ul>
       <p class="note" id="roomState" style="margin-top:.4rem"></p>
+
+      <div id="stitchBox" hidden style="margin-top:.9rem;border-top:1px solid var(--line);padding-top:.8rem">
+        <strong style="display:block;font-size:13px">Stitch the floor from your frames</strong>
+        <p class="note" id="stitchWhy" style="margin:.3rem 0 .5rem"></p>
+        <button id="stitchGo">Stitch the floor</button>
+        <canvas id="mosaic" hidden style="width:100%;margin-top:.6rem;border:1px solid var(--line);
+                border-radius:7px;background:var(--bg)"></canvas>
+        <p class="note" id="stitchState" style="margin-top:.4rem"></p>
+      </div>
     </div>
 
     <div id="advice" class="advice" hidden></div>
@@ -356,6 +365,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createSession, project, distance } from '../app/calibrate.js';
 import { looksEquirectangular, heightSensitivity } from '../app/pano.js';
 import * as Room from '../app/room.js';
+import { floorMosaic, cameraFrom } from '../app/stitch.js';
 import { ft } from '../app/units.js';
 
 const S = createSession();
@@ -701,19 +711,64 @@ function renderStrip() {
   });
 }
 
+/**
+ * Every frame that has been pinned to the floor, kept.
+ *
+ * Each entry is that frame's own homography and the four corners that produced
+ * it, keyed by its place in the strip. Two things need this. Coming back to a
+ * frame you already calibrated should not make you click it again, and a floor
+ * cannot be stitched out of one photograph: the stitch is exactly the set of
+ * frames that share this coordinate system.
+ */
+const planes = new Map();
+
+let stitchSoon = 0;
+function rememberPlane() {
+  const i = currentFrame();
+  if (i < 0 || !S.H) return;
+  const before = planes.size;
+  planes.set(i, { H: S.H.slice(), Hinv: S.Hinv.slice(),
+                  refPoints: S.refPoints.map(p => ({ ...p })),
+                  refWidth: S.refWidth, refHeight: S.refHeight });
+  stitchUI();
+  // Straight away, without being asked. Pinning a frame is the whole input the
+  // stitch needs, so waiting to be told to do it is asking for a click whose
+  // answer is always yes. Debounced, because dragging a corner fires this on
+  // every pointermove.
+  clearTimeout(stitchSoon);
+  if (roomMode()) stitchSoon = setTimeout(() => runStitch(true), planes.size > before ? 200 : 700);
+}
+
 function useImage(g) {
   // A different frame is a different camera position, so the plane has to be
   // pinned again on that frame. The outline is in real inches and survives.
   const carried = outline.length;
   if (carried && S.image && S.image !== g.img) {
-    S.refPoints = [];
-    S.H = null;
-    S.Hinv = null;
-    const hint = document.getElementById('frameHint');
-    if (hint) {
-      hint.hidden = false;
-      hint.textContent = `New frame. Click the same four reference corners on this one and your ` +
-        `${carried} corners will reappear in their real places.`;
+    const at = gallery.indexOf(g);
+    const kept = planes.get(at);
+    if (kept) {
+      // Already pinned once. Clicking the same four corners a second time is
+      // work the page can do for you, and doing it by hand moves them slightly,
+      // which quietly shifts everything traced on that frame.
+      S.refPoints = kept.refPoints.map(p => ({ ...p }));
+      S.refWidth = kept.refWidth; S.refHeight = kept.refHeight;
+      S.H = kept.H.slice(); S.Hinv = kept.Hinv.slice();
+      const hint = document.getElementById('frameHint');
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = `This frame was already pinned to the floor, so its four corners ` +
+          `came back with it. Carry on tracing.`;
+      }
+    } else {
+      S.refPoints = [];
+      S.H = null;
+      S.Hinv = null;
+      const hint = document.getElementById('frameHint');
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = `New frame. Click the same four reference corners on this one and your ` +
+          `${carried} corners will reappear in their real places.`;
+      }
     }
   }
   // Only the cheap part here. Re-encoding twelve frames every time someone
@@ -721,7 +776,14 @@ function useImage(g) {
   // written once, by whoever built the strip.
   setTimeout(rememberWork, 0);
   if (looksEquirectangular(g.img.width, g.img.height)) return startPano(g.img);
+  // reset() clears the corners, so a restored plane has to be put back after it.
+  const restore = S.H ? { refPoints: S.refPoints, H: S.H, Hinv: S.Hinv,
+                          refWidth: S.refWidth, refHeight: S.refHeight } : null;
   S.image = g.img; S.reset();
+  if (restore) {
+    S.refPoints = restore.refPoints; S.refWidth = restore.refWidth;
+    S.refHeight = restore.refHeight; S.H = restore.H; S.Hinv = restore.Hinv;
+  }
   const max = 1100, k = Math.min(1, max / Math.max(g.img.width, g.img.height));
   cv.width = g.img.width * k; cv.height = g.img.height * k;
   cv.hidden = false; drop.hidden = true;
@@ -1316,11 +1378,27 @@ document.getElementById('traceSquare').onclick = () => {
  * is set and the question actually arises.
  */
 let forked = false;
+/**
+ * Which of the two things is being measured: 'stairs', 'room', or not yet said.
+ *
+ * The stitch turns whatever plane was calibrated into a floor, and on a
+ * staircase that plane is a stair tread. Warping a tread across a room-sized
+ * rectangle produces a picture of nothing, and letting it become the place the
+ * planner opens on took people who had just measured their stairs to a smear
+ * instead of to their staircase.
+ */
+let measuring = 'unknown';
+const roomMode = () => measuring === 'room' || outline.length > 0;
 
 document.getElementById('forkRoom').onclick = () => {
   forked = true;
+  measuring = 'room';
   outline = []; squared = null; hiddenPicks = null;
   setTracing(true);
+  // The frame is usually already pinned by the time this is answered, so the
+  // stitch has everything it needs and should just run.
+  stitchUI();
+  if (planes.size) runStitch(true);
   document.getElementById('roomBox').scrollIntoView({ block: 'center', behavior: 'smooth' });
   document.getElementById('roomState').textContent =
     'Tracing. Click each corner where a wall meets the floor, all the way round, ' +
@@ -1329,14 +1407,115 @@ document.getElementById('forkRoom').onclick = () => {
 
 document.getElementById('forkStairs').onclick = () => {
   forked = true;
+  measuring = 'stairs';
+  stitchUI();
   steps();
   readout();
   document.getElementById('field').scrollIntoView({ block: 'center', behavior: 'smooth' });
 };
 
+/* ---------------------------------------------------------------------- *
+ * The floor, out of all the frames at once.
+ *
+ * Every frame pinned to the same rectangle shares one set of real inches, so
+ * each can be warped onto that floor and laid over the others. What comes out
+ * is a photograph of your floor taken from straight above, in inches, which is
+ * not a view any of the frames contained. That is stitching in the only sense
+ * a single plane allows: exact on the floor, and wrong for anything standing
+ * up off it, which is why the sources are the frames and the subject is the
+ * floor.
+ * ---------------------------------------------------------------------- */
+
+let mosaic = null;
+let stitching = false;
+
+function stitchUI() {
+  const box = document.getElementById('stitchBox');
+  if (!box) return;
+  const n = planes.size;
+  box.hidden = n === 0 || !roomMode();
+  const why = document.getElementById('stitchWhy');
+  if (why) {
+    why.innerHTML = n < 2
+      ? `<strong>${n} frame pinned.</strong> One frame gives one photograph of the floor, ` +
+        `straightened out. Pick another frame from the strip and click the same four ` +
+        `reference corners on it, and it joins this one: more frames, more floor.`
+      : `<strong>${n} frames pinned</strong> to the same rectangle, so they share one set of ` +
+        `real inches and can be laid over each other.`;
+  }
+}
+
+/** Every pinned frame, paired with the picture it came from. */
+function pinnedFrames() {
+  const out = [];
+  for (const [i, pl] of planes) {
+    const g = gallery[i];
+    if (g && g.img) out.push({ img: g.img, H: pl.H, Hinv: pl.Hinv, at: i });
+  }
+  return out;
+}
+
+async function runStitch(quiet) {
+  if (stitching) return;
+  const frames = pinnedFrames();
+  if (!frames.length) return;
+  stitching = true;
+  const st = document.getElementById('stitchState');
+  const go = document.getElementById('stitchGo');
+  if (go) { go.disabled = true; go.textContent = 'Stitching'; }
+  try {
+    const poly = outlineInches();
+    mosaic = await floorMosaic(frames, poly.length >= 3 ? poly : null, {
+      onProgress: p => {
+        if (st) st.textContent = `Warping frame ${Math.min(frames.length, Math.floor(p * frames.length) + 1)} ` +
+          `of ${frames.length} onto the floor, ${Math.round(p * 100)}%.`;
+      }
+    });
+    if (!mosaic) {
+      if (st) st.textContent = 'Nothing to stitch yet. Pin at least one frame to the floor first.';
+      return;
+    }
+    const cv2 = document.getElementById('mosaic');
+    cv2.width = mosaic.canvas.width; cv2.height = mosaic.canvas.height;
+    cv2.getContext('2d').drawImage(mosaic.canvas, 0, 0);
+    cv2.hidden = false;
+    const cams = frames.map(f => cameraFrom(f.Hinv, f.img.naturalWidth || f.img.width,
+                                                     f.img.naturalHeight || f.img.height))
+                       .filter(Boolean);
+    mosaic.cameras = cams;
+    const across = (mosaic.bounds.maxX - mosaic.bounds.minX) / 12;
+    const down = (mosaic.bounds.maxY - mosaic.bounds.minY) / 12;
+    if (st) {
+      st.textContent =
+        `${frames.length} frame${frames.length === 1 ? '' : 's'} warped onto one floor: ` +
+        `${across.toFixed(1)} by ${down.toFixed(1)} feet, ` +
+        `${Math.round(mosaic.coverage * 100)}% of it actually photographed. ` +
+        `Send it to the planner and you can walk round it in 3D. ` +
+        `Only the floor is stitched: a warp that is right for the floor is wrong for ` +
+        `anything standing up off it, so the walls come from your outline, not from this.`;
+    }
+    persistRoom();
+  } catch (e) {
+    if (st) st.textContent = 'Could not stitch these frames. ' + String((e && e.message) || e).slice(0, 90);
+  } finally {
+    stitching = false;
+    if (go) { go.disabled = false; go.textContent = mosaic ? 'Stitch again' : 'Stitch the floor'; }
+    // A stitched floor is a reason to enable Send, and that decision is taken
+    // in readout(). Without this the button stayed greyed out beside a finished
+    // picture of somebody's floor.
+    readout();
+    steps();
+  }
+}
+
+document.getElementById('stitchGo').onclick = () => runStitch(false);
+
 document.getElementById('traceStart').onclick = () => {
   forked = true;
+  measuring = 'room';
   outline = []; squared = null; hiddenPicks = null; setTracing(true);
+  stitchUI();
+  if (planes.size) runStitch(true);
 };
 document.getElementById('traceClose').onclick = () => {
   if (outline.length < 3) return;
@@ -1354,21 +1533,49 @@ document.getElementById('traceClear').onclick = () => {
 };
 document.getElementById('ceiling').oninput = () => { roomFacts(); persistRoom(); };
 
+/** The stitched floor, small enough for a browser store to hold. */
+function mosaicAsFloor() {
+  if (!mosaic) return null;
+  const base = { bounds: mosaic.bounds, coverage: mosaic.coverage,
+                 frames: mosaic.frames, cameras: mosaic.cameras || [] };
+  // A mosaic restored from storage already is a data URL; a fresh one is a
+  // canvas that has to be encoded.
+  if (mosaic.url) return { ...base, url: mosaic.url };
+  if (!mosaic.canvas) return null;
+  try { return { ...base, url: mosaic.canvas.toDataURL('image/jpeg', 0.72) }; }
+  catch { return null; }
+}
+
+/** The mosaic's own rectangle, for when there is a stitch but nothing traced. */
+function floorRect(b) {
+  return [{ x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY },
+          { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY }];
+}
+
 function persistRoom() {
   const poly = outlineInches();
+  // A stitch made while measuring a staircase is not a place. It is a warped
+  // stair tread, and it does not belong in the picker.
+  const floor = roomMode() ? mosaicAsFloor() : null;
   try {
-    if (poly.length >= 3) {
+    // A stitched floor is a place even with nothing traced round it. Requiring
+    // an outline first meant someone who imported a video, pinned a frame and
+    // got a photograph of their own floor still arrived at my staircase.
+    if (poly.length >= 3 || floor) {
+      const shape = poly.length >= 3 ? poly : floorRect(floor.bounds);
       localStorage.setItem(ROOM, JSON.stringify({
-        poly,
+        poly: shape,
+        traced: poly.length >= 3 ? outline : [],
+        walls: poly.length >= 3,
+        floor,
         ceiling: +document.getElementById('ceiling').value || 96,
-        traced: outline,
         squared: !!squared,
         frames: [...new Set(outline.map(p => p.frame))].length
       }));
     } else {
       localStorage.removeItem(ROOM);
     }
-  } catch { /* private mode */ }
+  } catch { /* private mode, or the mosaic is too big for the quota */ }
 }
 
 function restoreRoom() {
@@ -1376,6 +1583,14 @@ function restoreRoom() {
   try { r = JSON.parse(localStorage.getItem(ROOM) || 'null'); } catch { return; }
   if (!r) return;
   if (Array.isArray(r.traced)) outline = r.traced;
+  if (r.floor && r.floor.url) {
+    // The picture comes back so the planner still has a floor after a reload.
+    // The homographies that made it do not: those live with the frames, and are
+    // rebuilt when a frame is pinned again.
+    mosaic = { canvas: null, url: r.floor.url, bounds: r.floor.bounds,
+               coverage: r.floor.coverage, frames: r.floor.frames,
+               cameras: r.floor.cameras || [] };
+  }
   // Squaring is a decision, not a redrawing. Without this the tidied outline
   // was thrown away on every reload and the raw traced corners came back.
   if (Array.isArray(r.poly) && r.squared) squared = r.poly;
@@ -1828,9 +2043,17 @@ function readout() {
 
   // A traced room is reason enough to go to the planner, even with no readings
   // filed against the staircase: the room is the thing you want to stand in.
+  // So is a stitched floor. Someone who imports a video, pins one frame and
+  // gets a photograph of their own floor has made a place, and the button that
+  // takes places to the planner was greyed out in front of them.
   const traced = outline.length >= 3;
+  const stitched = !!mosaic && roomMode();
   const pendingRead = last && last !== filed;
-  document.getElementById('send').disabled = !n && !traced;
+  document.getElementById('send').disabled = !n && !traced && !stitched;
+  const sendBtn = document.getElementById('send');
+  sendBtn.textContent = traced ? 'Use this room in Elbow Room'
+                      : stitched && !n ? 'Use this floor in Elbow Room'
+                      : 'Use this staircase in Elbow Room';
   const warn = document.getElementById('unfiled');
   if (warn) {
     warn.hidden = !pendingRead;
@@ -1839,14 +2062,21 @@ function readout() {
         `Pick what it is above and press Save this reading, or it will not travel.`;
     }
   }
+  const floorBit = stitched
+    ? `your floor stitched from ${mosaic.frames} frame${mosaic.frames === 1 ? '' : 's'}` : '';
   document.getElementById('sendWhy').textContent =
     traced && !n
-      ? 'Your traced room goes to the planner. Kept in this browser only.'
+      ? `Your traced room${floorBit ? ' and ' + floorBit : ''} goes to the planner. ` +
+        `Kept in this browser only.`
       : traced
-        ? `${n} reading${n > 1 ? 's' : ''} and your traced room, kept in this browser only.`
-        : n
-          ? `${n} reading${n > 1 ? 's' : ''} kept in this browser. Nothing is sent anywhere.`
-          : 'Save a reading, or trace a room, and this opens it in the planner.';
+        ? `${n} reading${n > 1 ? 's' : ''}, your traced room` +
+          `${floorBit ? ' and ' + floorBit : ''}, kept in this browser only.`
+        : stitched
+          ? `${floorBit.charAt(0).toUpperCase() + floorBit.slice(1)} goes to the planner, ` +
+            `where you can walk round it. Kept in this browser only.`
+          : n
+            ? `${n} reading${n > 1 ? 's' : ''} kept in this browser. Nothing is sent anywhere.`
+            : 'Save a reading, or trace a room, and this opens it in the planner.';
 }
 
 document.getElementById('rw').oninput = sync;
@@ -2306,8 +2536,19 @@ document.getElementById('saveSession').onclick = async () => {
   // A traced floor is the thing you spent the clicks on, so it travels with the
   // session. Without it, opening a saved room in the planner showed the default
   // staircase, which looked exactly like the save had not worked.
-  const room = roomAsSaved();
-  if (room) room.traced = outline;
+  // A traced outline gives walls. A stitch on its own gives a floor and no
+  // walls, which is still a place, and saving it is the only way the frames
+  // someone spent clicks pinning survive closing the tab.
+  const floorPic = roomMode() ? mosaicAsFloor() : null;
+  let room = roomAsSaved();
+  if (room) {
+    room.traced = outline;
+    room.walls = true;
+    if (floorPic) room.floor = floorPic;
+  } else if (floorPic) {
+    room = { poly: floorRect(floorPic.bounds), traced: [], walls: false, floor: floorPic,
+             ceiling: +document.getElementById('ceiling').value || 96 };
+  }
   list.unshift({
     name,
     savedAt: new Date().toISOString().slice(0, 10),
@@ -2373,8 +2614,11 @@ document.getElementById('send').onclick = () => {
   // Set either way: leaving a previously opened saved session named here sent
   // you back to that one instead of to the work you just pressed Send on.
   try {
+    // A stitched floor counts as a place, so Send lands on it rather than on the
+    // loose readings, which is what put my staircase on screen after someone
+    // imported a video of their hallway.
     localStorage.setItem('elbowroom.active',
-      outlineInches().length >= 3 ? '__room' : '__working');
+      (outlineInches().length >= 3 || (mosaic && roomMode())) ? '__room' : '__working');
   } catch { /* private mode */ }
   const photo = frameAsPhoto();
   try {
@@ -2447,7 +2691,7 @@ document.getElementById('reset').onclick = async () => {
   drop.scrollIntoView({ block: 'center', behavior: 'smooth' });
 };
 
-S.onChange(() => { draw(); steps(); readout(); rememberWork(); });
+S.onChange(() => { draw(); steps(); readout(); rememberWork(); rememberPlane(); });
 restore();
 restoreRoom();
 renderMarks();

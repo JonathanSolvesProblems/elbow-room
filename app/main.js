@@ -28,6 +28,10 @@ export const app = {
   // A room traced off a photograph, if one is loaded. When it is, the verdict
   // is about fitting inside four walls rather than travelling up a flight.
   room: null,
+  // The stitched photograph of that floor, and whether an outline was traced
+  // round it. A stitch with no outline is a floor and no walls.
+  floor: null,
+  walls: true,
   ceiling: 96,
   subscribers: [],
 
@@ -56,6 +60,35 @@ export const app = {
     const it = dims || this.dims;
     const L = it.length, W = it.depth, H = it.height;
     const reasons = [];
+
+    // A stitched floor with nothing traced round it has no walls, so there is
+    // no ceiling to clear and no gap to squeeze through. Saying otherwise would
+    // be measuring against a rectangle the stitch drew, not one anybody found.
+    if (this.walls === false) {
+      const standsOn = d.longest >= L;
+      reasons.push({
+        stage: 'photographed floor', pass: standsOn,
+        detail: standsOn
+          ? `${ft(L)} fits within the floor that was photographed, which runs ${ft(d.longest)} ` +
+            `at its longest.`
+          : `${ft(L)} is longer than the ${ft(d.longest)} of floor that was photographed.`
+      });
+      reasons.push({
+        stage: 'walls', pass: true,
+        detail: 'No walls were traced here, so nothing has been checked against one. This is a ' +
+                'photograph of your floor in real inches, not a survey of the room. Trace the ' +
+                'outline on the measure page to get a real verdict.'
+      });
+      return {
+        verdict: standsOn ? 'goes' : 'blocked',
+        reasons,
+        advice: standsOn
+          ? ['Trace the walls on the measure page and this becomes a real answer.']
+          : ['Photograph more of the floor, or trace the walls, and ask again.'],
+        footprint: { length: L, width: W, upright: false, tilt: 0 },
+        room: d
+      };
+    }
 
     const standsFlat = d.longest >= Math.hypot(L, W) * 0.999 || d.longest >= L;
     reasons.push({
@@ -457,8 +490,9 @@ export function boot() {
     // Set, do not update. view.update emits, and view.onChange calls back into
     // app.emit, so calling it from inside this handler is an infinite loop.
     view.state.room = app.room;
+    view.state.floor = app.floor;
     solid.set({
-      room: app.room, ceiling: app.ceiling,
+      room: app.room, ceiling: app.ceiling, floor: app.floor, walls: app.walls,
       a: st.turn.widthA.value, b: st.turn.widthB.value,
       headroom: st.turn.headroom.value,
       rise: st.run.rise.value, going: st.run.going.value,
@@ -523,10 +557,17 @@ export function boot() {
     const room = readJson('elbowroom.room', null);
     if (room && Array.isArray(room.poly) && room.poly.length >= 3) {
       const d = Room.describe(room.poly, room.ceiling);
-      list.push({ id: '__room', name: 'The room you traced', fixed: true, room: room.poly,
-                  ceiling: room.ceiling,
-                  note: `${d.corners} corners, ${d.area.toFixed(0)} sq ft, ` +
-                        `${ft(d.ceiling)} ceiling` });
+      const stitched = room.floor && room.floor.url;
+      // A stitched floor with nothing traced round it is still somewhere: a
+      // photograph of your own floor, in inches, with no walls claimed.
+      list.push({ id: '__room', fixed: true, room: room.poly, ceiling: room.ceiling,
+                  floor: room.floor || null, walls: room.walls !== false,
+                  name: room.walls === false ? 'The floor you stitched' : 'The room you traced',
+                  note: room.walls === false
+                    ? `${d.area.toFixed(0)} sq ft photographed from ` +
+                      `${room.floor.frames} frame${room.floor.frames === 1 ? '' : 's'}`
+                    : `${d.corners} corners, ${d.area.toFixed(0)} sq ft, ` +
+                      `${ft(d.ceiling)} ceiling` + (stitched ? ', photographed floor' : '') });
     }
     for (const x of readJson('elbowroom.sessions', []) || []) {
       if (!x || !x.name) continue;
@@ -535,11 +576,17 @@ export function boot() {
       // screen after someone saved and reopened their living room.
       if (x.room && Array.isArray(x.room.poly) && x.room.poly.length >= 3) {
         const d = Room.describe(x.room.poly, x.room.ceiling);
+        const stitched = x.room.floor && x.room.floor.url;
         list.push({ id: 'saved:' + x.name, name: x.name, room: x.room.poly,
                     ceiling: x.room.ceiling, photo: x.photo,
-                    note: `${d.corners} corners, ${d.area.toFixed(0)} sq ft, ` +
-                          `${ft(d.ceiling)} ceiling` +
-                          (x.frames ? `, ${x.frames} frames` : '') });
+                    floor: x.room.floor || null, walls: x.room.walls !== false,
+                    note: x.room.walls === false
+                      ? `stitched floor, ${d.area.toFixed(0)} sq ft from ` +
+                        `${x.room.floor.frames} frame${x.room.floor.frames === 1 ? '' : 's'}`
+                      : `${d.corners} corners, ${d.area.toFixed(0)} sq ft, ` +
+                        `${ft(d.ceiling)} ceiling` +
+                        (stitched ? ', photographed floor' : '') +
+                        (x.frames ? `, ${x.frames} frames` : '') });
         continue;
       }
       // Count only real measurements. Step counts alone cannot size a staircase.
@@ -587,6 +634,8 @@ export function boot() {
     // A traced room is a different kind of place, not a differently sized
     // staircase, so it replaces the model rather than editing it.
     app.room = entry.room || null;
+    app.floor = entry.floor || null;
+    app.walls = entry.walls !== false;
     app.ceiling = entry.ceiling || 96;
     if (app.room) {
       STAIRCASE.label = entry.name;
@@ -688,16 +737,25 @@ export function boot() {
     const say = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
     say('planlabel', isRoom ? 'Plan · looking down on the floor'
                             : 'Plan · looking down on the turn');
-    say('solidlabel', isRoom ? 'The room · drag to orbit, scroll to zoom'
-                             : 'The shaft · drag to orbit, scroll to zoom');
+    const noWalls = isRoom && (list.find(x => x.id === active) || list[0]).walls === false;
+    say('solidlabel', !isRoom ? 'The shaft · drag to orbit, scroll to zoom'
+                     : noWalls ? 'Your floor · drag to orbit, scroll to zoom'
+                     : 'The room · drag to orbit, scroll to zoom');
     say('placeshead', isRoom ? 'Which place' : 'Which staircase');
+    const cur = list.find(x => x.id === active) || list[0];
     const tagEl = document.getElementById('tag');
     if (tagEl) {
       if (tagEl.dataset.stairs === undefined) tagEl.dataset.stairs = tagEl.textContent;
-      tagEl.textContent = isRoom
-        ? 'Before you buy it, find out whether it fits. A room traced from your own photograph.'
-        : tagEl.dataset.stairs;
+      tagEl.textContent = !isRoom ? tagEl.dataset.stairs
+        : cur.walls === false
+          ? 'Your own floor, stitched out of your video frames and laid out in real inches.'
+          : 'Before you buy it, find out whether it fits. A room traced from your own photograph.';
     }
+    // The "this is your staircase" banner belongs to a staircase. Left up over
+    // a stitched floor it announced readings that have nothing to do with what
+    // is on screen.
+    const mineEl = document.getElementById('mine');
+    if (mineEl && isRoom) mineEl.hidden = true;
 
     const sw = document.getElementById('switch');
     if (sw) {
@@ -705,9 +763,16 @@ export function boot() {
       sw.style.color = '';
       if (!on.id) {
         sw.textContent = 'The staircase this app was built for. Measure your own to add it here.';
+      } else if (on.room && on.walls === false) {
+        sw.textContent = 'Your own floor, warped out of ' +
+          `${on.floor ? on.floor.frames : 'several'} video frames into one picture taken from ` +
+          'straight above, in real inches. There are no walls here because none were traced: ' +
+          'only the floor can be stitched from photographs of a floor. Trace the outline on ' +
+          'the measure page to put walls round it.';
       } else if (on.room) {
-        sw.textContent = 'A room traced from your own photograph. The verdict below is about ' +
-          'fitting inside it, not carrying something up a flight.';
+        sw.textContent = 'A room traced from your own photograph' +
+          (on.floor ? ', with its floor stitched from your video frames' : '') +
+          '. The verdict below is about fitting inside it, not carrying something up a flight.';
       } else if (on.measured === 0) {
         sw.style.color = 'var(--pinch)';
         sw.textContent = `${on.name} has no measurements in it, so this is the default shape ` +

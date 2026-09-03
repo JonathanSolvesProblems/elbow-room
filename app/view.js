@@ -23,6 +23,7 @@ export const state = {
   a: 41.5,
   b: 41.5,
   room: null,          // a traced outline in inches, or null for the staircase
+  floor: null,         // a stitched photograph of that floor, with its bounds
   object: { length: 91, depth: 36, label: 'The couch', shape: 'sofa', upright: false },
   pos: { x: 70, y: 20.75 },
   angle: 0,
@@ -199,6 +200,21 @@ const drawOn = {
   }
 };
 
+/** The stitched floor as a picture, decoded once and kept. */
+let floorPic = null, floorUrl = null;
+function floorImage() {
+  const f = state.floor;
+  if (!f || !f.url || !f.bounds) { floorPic = null; floorUrl = null; return null; }
+  if (f.url !== floorUrl) {
+    floorUrl = f.url;
+    floorPic = new Image();
+    floorPic.onload = () => draw();
+    floorPic.src = f.url;
+    return null;
+  }
+  return floorPic && floorPic.complete && floorPic.naturalWidth ? floorPic : null;
+}
+
 const px = x => ox + x * scale;
 const py = y => oy - y * scale;
 const inx = X => (X - ox) / scale;
@@ -230,6 +246,16 @@ export function draw() {
     ctx.globalAlpha = Math.max(0, (t - 0.45) / 0.55);
     ctx.fillStyle = css('--floor', '#efeae1');
     ctx.fill(path);
+    // Your own floor, straightened out, inside the outline it belongs to. Drawn
+    // in the same inches as everything else, so a foot on this picture is a
+    // foot on the plan.
+    const fl = floorImage();
+    if (fl) {
+      const b = state.floor.bounds;
+      ctx.clip(path);
+      ctx.drawImage(fl, px(b.minX), py(b.maxY),
+                    (b.maxX - b.minX) * scale, (b.maxY - b.minY) * scale);
+    }
     ctx.restore();
 
     ctx.save();

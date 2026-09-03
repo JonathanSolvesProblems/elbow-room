@@ -28,6 +28,9 @@ let M = {
   object: { length: 91, width: 36, height: 48, shape: 'sofa' },
   tilt: 0, upright: false, blocked: true, touching: false, note: null,
   room: null, ceiling: 96,
+  // A stitched photograph of the real floor, and whether there are walls to
+  // put round it. A floor on its own is still a place worth standing in.
+  floor: null, walls: true,
   pos: { x: 100, y: 20 }, yaw: 0
 };
 
@@ -156,7 +159,8 @@ export function set(next) {
   // The room counts as geometry too, so switching between a staircase and a
   // traced room has to rebuild rather than just move the object.
   const key = () => JSON.stringify([M.a, M.b, M.headroom, M.rise, M.going, M.treads, M.winders,
-                                    M.ceiling, M.room]);
+                                    M.ceiling, M.room, M.walls,
+                                    M.floor && M.floor.url ? M.floor.url.length : 0]);
   const before = key();
   M = { ...M, ...next, object: { ...M.object, ...(next.object || {}) } };
   if (key() !== before) build();
@@ -393,16 +397,63 @@ function buildRoom() {
   slab.receiveShadow = true;
   shaftGroup.add(slab);
 
-  const walls = new THREE.Mesh(
-    (() => { const g = new THREE.ExtrudeGeometry(shape, { depth: H, bevelEnabled: false });
-             g.rotateX(-Math.PI / 2); return g; })(), wallMat);
-  walls.receiveShadow = true;
-  shaftGroup.add(walls);
+  // Your own floor, photographed from above, laid exactly where it was
+  // measured. The extrusion's own UVs are in metres from the origin, so the
+  // picture only lands in the right place once they are mapped through the
+  // bounds the stitch reported.
+  if (M.floor && M.floor.url && M.floor.bounds) {
+    const b = M.floor.bounds;
+    const t = tex.load(M.floor.url);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    const g = new THREE.ExtrudeGeometry(shape, { depth: .02, bevelEnabled: false });
+    g.rotateX(-Math.PI / 2);
+    const pos = g.attributes.position, uv = [];
+    for (let i = 0; i < pos.count; i++) {
+      const wx = pos.getX(i) / IN, wz = -pos.getZ(i) / IN;   // back to plan inches
+      uv.push((wx - b.minX) / (b.maxX - b.minX), 1 - (wz - b.minY) / (b.maxY - b.minY));
+    }
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    // Lit by its own emission as well as by the room. A photograph of a floor
+    // is already a picture of that floor lit, and putting it under a raking key
+    // light a second time turned it almost black.
+    const photo = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: .85,
+      roughness: 1, metalness: 0, transparent: true, opacity: .98 }));
+    photo.position.y = 0.004;
+    photo.receiveShadow = true;
+    shaftGroup.add(photo);
+  }
+
+  // No outline traced means no walls to build. A box invented round a stitched
+  // floor would be geometry nobody measured, presented beside geometry they did.
+  if (M.walls !== false) {
+    const walls = new THREE.Mesh(
+      (() => { const g = new THREE.ExtrudeGeometry(shape, { depth: H, bevelEnabled: false });
+               g.rotateX(-Math.PI / 2); return g; })(), wallMat);
+    walls.receiveShadow = true;
+    shaftGroup.add(walls);
+  }
 
   // A line along the top of the walls, so the room reads as a room from outside.
+  const rimY = M.walls !== false ? H : 0.02;
   const rim = new THREE.BufferGeometry().setFromPoints(
-    [...poly, poly[0]].map(p => new THREE.Vector3(p.x * IN, H, p.y * IN)));
+    [...poly, poly[0]].map(p => new THREE.Vector3(p.x * IN, rimY, p.y * IN)));
   shaftGroup.add(new THREE.Line(rim, new THREE.LineBasicMaterial({ color: 0x8d5a3a })));
+
+  // Where each photograph was taken from, recovered from its own homography.
+  // Markers only: the ground position follows from the maths, the height rests
+  // on a guessed focal length, and nothing is measured against either.
+  for (const c of (M.floor && M.floor.cameras) || []) {
+    if (!isFinite(c.x) || !isFinite(c.y)) continue;
+    const pin = new THREE.Mesh(
+      new THREE.ConeGeometry(.05, .16, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1c6b3f, roughness: .5,
+                                       emissive: 0x0d3a20, emissiveIntensity: .6 }));
+    pin.position.set(c.x * IN, Math.min(Math.max(c.height, 24), 84) * IN, c.y * IN);
+    pin.rotation.x = Math.PI;
+    shaftGroup.add(pin);
+  }
 
   scene.add(shaftGroup);
   placeObject();
