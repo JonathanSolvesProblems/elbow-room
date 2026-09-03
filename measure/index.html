@@ -1403,6 +1403,23 @@ document.getElementById('forkRoom').onclick = () => {
   document.getElementById('roomState').textContent =
     'Tracing. Click each corner where a wall meets the floor, all the way round, ' +
     'then press Close the outline.';
+  // The reference boxes start at a stair tread, which is the wrong default for
+  // a room and the one number that silently scales everything else.
+  const rw = document.getElementById('rw'), rh = document.getElementById('rh');
+  if (+rw.value === 41.5 && +rh.value === 41.5) {
+    const rs = document.getElementById('refstate');
+    if (rs) {
+      rs.style.color = 'var(--pinch)';
+      rs.textContent = 'The reference is still 41.5 by 41.5 inches, which is a stair tread. ' +
+        'If what you clicked on the floor was a tile or a sheet of paper, change it now: every ' +
+        'inch on this page is scaled by it.';
+    }
+    rw.style.borderColor = 'var(--pinch)';
+    rh.style.borderColor = 'var(--pinch)';
+    const clear = () => { rw.style.borderColor = ''; rh.style.borderColor = ''; };
+    rw.addEventListener('input', clear, { once: true });
+    rh.addEventListener('input', clear, { once: true });
+  }
 };
 
 document.getElementById('forkStairs').onclick = () => {
@@ -1440,6 +1457,9 @@ function stitchUI() {
     why.innerHTML =
       `<strong>${n} frame${n === 1 ? '' : 's'} pinned by hand` +
       (auto ? `, ${auto} more matched automatically` : '') + `.</strong> ` +
+      `Everything here is scaled by your reference, currently ` +
+      `<strong>${document.getElementById('rw').value} by ` +
+      `${document.getElementById('rh').value} inches</strong>. ` +
       `Frames pinned to the same rectangle share one set of real inches, so each can be warped ` +
       `onto that floor and laid over the others. The page tries to find your four corners in ` +
       `the rest of the strip by itself, and leaves out any it cannot place confidently rather ` +
@@ -1528,10 +1548,32 @@ async function runStitch(quiet) {
     mosaic.cameras = cams;
     const across = (mosaic.bounds.maxX - mosaic.bounds.minX) / 12;
     const down = (mosaic.bounds.maxY - mosaic.bounds.minY) / 12;
+
+    /* A wrong reference size is silent, and it scales everything.
+     *
+     * The reference boxes start at 41 and a half inches because that is a stair
+     * tread, and someone measuring a room clicks a floor tile without changing
+     * them. Telling the app a 12 inch tile is 41 and a half makes every inch in
+     * the picture three and a half times too long and every square foot twelve
+     * times too many, which is how a hallway came back as 2,221 square feet.
+     * The arithmetic is right and the answer is nonsense, so the only place to
+     * catch it is here, against what rooms are actually like. */
+    const sqft = across * down;
+    const ref = document.getElementById('rw').value;
+    const warn = sqft > 700
+      ? `That is ${Math.round(sqft)} square feet, which is bigger than most whole floors of a ` +
+        `house. Check the reference size: it is set to ${ref} inches, and everything here is ` +
+        `scaled by it. If what you clicked was a 12 inch tile, type 12.`
+      : sqft < 4
+        ? `That is under four square feet, which is smaller than a doormat. Check the reference ` +
+          `size, currently ${ref} inches.`
+        : '';
     const byHand = frames.filter(f => f.byHand).length;
     const auto = frames.length - byHand;
     if (st) {
+      st.style.color = warn ? 'var(--pinch)' : '';
       st.textContent =
+        (warn ? warn + ' ' : '') +
         `${frames.length} frame${frames.length === 1 ? '' : 's'} warped onto one floor: ` +
         `${across.toFixed(1)} by ${down.toFixed(1)} feet of it, ` +
         `${Math.round((mosaic.filled || 0) * 100)}% painted. ` +
