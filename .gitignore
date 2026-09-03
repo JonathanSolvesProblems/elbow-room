@@ -33,6 +33,10 @@ _videos/
 *.webm
 demo.mp4
 reference/demo.mp4
+reference/short.mp4
+reference/narration.short.wav
+reference/narration_trim.wav
+reference/vertical/
 reference/narration.wav
 reference/narration.transcript.json
 *.edit-plan.json
