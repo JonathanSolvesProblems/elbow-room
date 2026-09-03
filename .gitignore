@@ -25,3 +25,14 @@ SUBMISSION.md
 # The demo script, local only.
 SCRIPT.md
 NARRATION.md
+
+# vidkit generated media — do not commit
+reference/broll_cut/
+broll/
+_videos/
+*.webm
+demo.mp4
+reference/demo.mp4
+reference/narration.wav
+reference/narration.transcript.json
+*.edit-plan.json
