@@ -4,6 +4,7 @@
 
 Live: **https://elbowroom.jonathanandrei.com**
 Demo, 2 minutes 36 seconds: **https://www.youtube.com/watch?v=A2cfxmLGXfg**
+Write-up: **https://jonathanandrei.com/blog/elbow-room-webmcp-canvas-spatial-planner/**
 
 [![Watch the demo](https://i.ytimg.com/vi/A2cfxmLGXfg/hqdefault.jpg)](https://www.youtube.com/watch?v=A2cfxmLGXfg)
 
