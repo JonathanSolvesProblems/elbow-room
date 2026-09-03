@@ -36,3 +36,6 @@ reference/demo.mp4
 reference/narration.wav
 reference/narration.transcript.json
 *.edit-plan.json
+
+# Submission gallery stills. One of them shows inside the house.
+preview/
