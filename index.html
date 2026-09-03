@@ -63,6 +63,28 @@
                            background:var(--pinch); animation:beat .9s ease-in-out infinite; }
   @keyframes beat { 0%,100% { opacity:.25; transform:scale(.7) } 50% { opacity:1; transform:scale(1) } }
   @media (prefers-reduced-motion: reduce) { .building span::before { animation:none; opacity:.8 } }
+  /* The one thing a judge can get wrong before seeing anything.
+     WebMCP is off by default, and a reader who misses that scores the app
+     without ever meeting the half it was built for. So this sits in the flow
+     above everything, not over it, and only when the API is genuinely absent. */
+  #flagbar { display:none; }
+  body[data-webmcp="absent"] #flagbar { display:block; }
+  #flagbar { background:var(--badfill); border-bottom:1px solid var(--pinch);
+             padding:.7rem .9rem; font-size:13.5px; position:sticky; top:2.35rem; z-index:29; }
+  #flagbar .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;
+                  max-width:1100px; margin:0 auto; }
+  #flagbar b { color:var(--pinch); }
+  #flagbar button { font:inherit; font-size:12.5px; padding:.3rem .7rem; margin:0;
+                    border:1px solid var(--pinch); border-radius:6px; background:transparent;
+                    color:var(--fg); cursor:pointer; }
+  #flagbar button:hover { background:var(--pinch); color:#fff; }
+  #flagbar ol { margin:.6rem 0 0; padding-left:1.3rem; max-width:1100px;
+                margin-left:auto; margin-right:auto; }
+  #flagbar li { margin:.25rem 0; }
+  #flagbar code { background:var(--card); padding:.1rem .35rem; border-radius:4px;
+                  border:1px solid var(--line); font-size:12.5px; }
+  #flagbar .more { display:none; }
+  #flagbar.open .more { display:block; }
   .tabs { position:absolute; top:.6rem; right:.7rem; z-index:5; display:flex; gap:.15rem;
           background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.15rem; }
   .tabs button { font:inherit; font-size:12px; padding:.28rem .7rem; border:0; border-radius:6px;
@@ -165,6 +187,28 @@
   <a href="https://github.com/JonathanSolvesProblems/elbow-room" data-k="repo">Code</a>
   <a href="https://www.youtube.com/watch?v=A2cfxmLGXfg" data-k="demo">Demo &middot; 2 min</a>
 </nav>
+
+<div id="flagbar">
+  <div class="row">
+    <span><b>WebMCP is off in this browser.</b> The planner works without it, but the half this
+      project exists to show, an agent driving the canvas, needs it switched on. It takes
+      about thirty seconds.</span>
+    <button id="flagHow" type="button">Show me how</button>
+    <button id="flagCopy" type="button">Copy the flag URL</button>
+    <a href="/probe/" style="font-size:12.5px">Check my browser &rarr;</a>
+  </div>
+  <div class="more">
+    <ol>
+      <li>Paste <code>chrome://flags/#enable-webmcp-testing</code> into the address bar.
+        In Edge use <code>edge://flags/#enable-webmcp-testing</code>. Browsers block a page from
+        linking there, so it has to be pasted.</li>
+      <li>Set <strong>WebMCP for testing</strong> to <strong>Enabled</strong>.</li>
+      <li>Restart the browser, then come back to this page. This bar disappears when it worked.</li>
+    </ol>
+    <p style="margin:.5rem auto 0;max-width:1100px">ChatGPT's in-app browser needs no flag.
+      Verified on Chrome 152 and on Edge.</p>
+  </div>
+</div>
 <div class="wrap">
   <div class="stage">
     <div class="tabs" role="tablist">
@@ -279,6 +323,19 @@ try { lastView = localStorage.getItem('elbowroom.view'); } catch { /* none kept 
 setView(['plan', 'solid', 'both'].includes(lastView)
   ? lastView
   : (window.innerWidth >= 1180 ? 'both' : 'plan'));
+
+  // The flag bar. Its visibility is pure CSS off body[data-webmcp], which
+  // registerTools sets, so it cannot flash before the answer is known.
+  const fb = document.getElementById('flagbar');
+  if (fb) {
+    document.getElementById('flagHow').onclick = () => fb.classList.toggle('open');
+    document.getElementById('flagCopy').onclick = async (e) => {
+      const url = navigator.userAgent.includes('Edg/')
+        ? 'edge://flags/#enable-webmcp-testing' : 'chrome://flags/#enable-webmcp-testing';
+      try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied. Paste it in the address bar.'; }
+      catch { fb.classList.add('open'); e.target.textContent = 'Copy blocked, see the steps'; }
+    };
+  }
 </script>
 </body>
 </html>
